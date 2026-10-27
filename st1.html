@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>學生端 - 錯題重答系統</title>
+    <!-- 使用靜態 CSS，避免 iPad 開啟本機 HTML 檔案時因安全機制阻擋動態腳本而跑版 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .hidden-section { display: none; }
+        .q-btn { transition: all 0.1s; touch-action: manipulation; }
+        /* 點選後的樣式 (紅色背景與陰影) */
+        .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }
+        .btn-option { touch-action: manipulation; }
+        .btn-option:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20">
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-lg p-4 md:p-8">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-green-600 mb-6">🎓 錯題重答練習系統</h1>
+        
+        <div id="section-menu" class="mb-8">
+            <p id="total-questions-info" class="mb-6 text-sm md:text-lg font-bold text-gray-700 text-center bg-gray-50 py-2 rounded">
+                📚 題庫已載入，共 <span id="q-count" class="text-blue-600"></span> 題。
+            </p>
+            
+            <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 md:p-6 mb-8 shadow-sm">
+                <!-- 移除了截圖功能，畫面改為全版的題號點選面板 -->
+                <div class="flex flex-col">
+                    <div class="flex justify-between items-end mb-4">
+                        <h2 class="text-xl md:text-2xl font-bold text-purple-800">📌 請點選要重做訂正的題號</h2>
+                        <span id="img-status" class="text-sm font-bold text-purple-600"></span>
+                    </div>
+                    <div id="q-grid" class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3 bg-white p-4 md:p-6 rounded-xl border border-purple-200 h-auto max-h-80 overflow-y-auto shadow-inner">
+                        <!-- 題號按鈕會自動產生在這裡 -->
+                    </div>
+                    <button id="batch-start-btn" onclick="startBatchPractice()" class="mt-6 w-full bg-purple-600 text-white font-bold py-3 md:py-4 px-6 rounded-xl hover:bg-purple-700 shadow animate-pulse hidden text-lg">
+                        🚀 確認無誤，開始重答
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 答題區 -->
+        <div id="section-quiz" class="hidden-section bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 md:p-6 mb-8 relative">
+            <div class="flex justify-between items-center mb-4">
+                <button onclick="backToMenu()" class="text-gray-500 hover:text-gray-800 font-bold px-3 py-2 border rounded bg-white shadow-sm text-sm md:text-base">← 返回主選單</button>
+                <span id="batch-progress" class="font-bold text-white bg-purple-600 px-3 py-1 rounded-full shadow text-sm"></span>
+            </div>
+            <h2 class="text-xl md:text-2xl font-bold mb-4 text-yellow-800" id="quiz-title">第 X 題</h2>
+            <div id="quiz-content" class="text-lg md:text-xl bg-white p-4 md:p-6 rounded-lg shadow mb-6 leading-relaxed"></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4" id="options-container"></div>
+            <div id="feedback" class="mt-4 text-center text-xl md:text-2xl font-bold h-10"></div>
+        </div>
+
+        <!-- 統計區 -->
+        <div id="section-stats" class="overflow-x-auto">
+            <h2 class="text-lg md:text-xl font-bold mb-4 text-gray-800">📊 錯題答題次數統計</h2>
+            <div class="bg-white rounded-lg shadow min-w-[300px] border border-gray-200">
+                <table class="min-w-full text-sm md:text-base">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="py-2 px-3 text-left font-bold w-16 md:w-24">題號</th>
+                            <th class="py-2 px-3 text-left font-bold">題目</th>
+                            <th class="py-2 px-3 text-center font-bold w-20 md:w-32">錯誤</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-body">
+                        <tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const questionBank = [{"id":1,"text":"在什麼地方觀測月亮比較合適？①百貨公司裡　②地下室裡　③房間裡　④學校的操場","answer":"④"},{"id":2,"text":"觀察月亮時，除了要記錄月亮的方位與高度角外，下列哪一項也必須記錄？①降雨量　②風向　③氣溫　④日期與時間","answer":"④"},{"id":3,"text":"測量一天中月亮在天空中的位置變化時，多久觀測和記錄一次比較適當？①10小時　②1小時　③10分鐘　④5分鐘","answer":"②"},{"id":4,"text":"「月相」是指什麼？　①月亮的照片　②月亮圓缺變化的形狀　③月亮表面的圖案　④月亮的亮度","answer":"②"},{"id":5,"text":"光源、影子和物體，它們的位置會怎麼排列？　①光源在影子和物體中間　②物體在光源和影子中間　③影子在光源和物體中間　④以上情況都有可能","answer":"②"},{"id":6,"text":"如果影子的形成位置如下圖，代表光是從哪裡照過去的？　①ㄅ　②ㄆ　③ㄇ　④ㄈ","answer":"②"},{"id":7,"text":"太陽在一天中移動路徑的方向為何？　①由東向西　②由西向東　③由南向北　④由北向南","answer":"①"},{"id":8,"text":"下列哪一天通常能看到虧凸月？①農曆二十　②農曆十三　③農曆十二　④農曆十六","answer":"①"},{"id":9,"text":"光照在下列哪一種物體上會產生明顯而清楚的影子？　①玻璃杯　②透明塑膠尺　③放大鏡鏡片　④橡皮擦","answer":"④"},{"id":10,"text":"月亮會從什麼方位升起？①東方　②西方　③南方　④北方","answer":"①"},{"id":11,"text":"使用高度角觀測器測得的哪一個刻度代表天頂的位置？　①0度　②45度　③60度　④90度","answer":"④"},{"id":12,"text":"小明觀測月亮時會使用指北針，下列哪一項是指北針的功能？①測量月亮的亮度　②測量月亮的高度角　③測量月亮的形狀　④測量月亮的方位","answer":"④"},{"id":13,"text":"表示月亮位置時，可以利用地面景物當參考點。請問下列哪一種景物最適合當作參考點？①行駛中的汽車　②操場上的旗竿　③放學回家的路隊　④地上的小草","answer":"②"},{"id":14,"text":"製作月亮觀測紀錄表時，不須記錄哪一項資訊？　①月亮高度角和方位　②月亮看起來的形狀　③當天氣溫　④觀測日期與時間","answer":"③"},{"id":15,"text":"一天中，月亮在天空中會怎麼移動？①由東向西移動　②由西向東移動　③由北向南移動　④由南向北移動","answer":"①"},{"id":16,"text":"同一天晚上8點和晚上10點，月亮的哪一項特性會有明顯不同？①高度角　②月亮的明亮部分　③亮度　④大小","answer":"①"},{"id":17,"text":"阿仁在觀測月亮變化時，哪一項不是阿仁觀測月亮變化時會使用的工具？　①高度角觀測器　②指北針　③月亮觀測紀錄表　④鏡子","answer":"④"},{"id":18,"text":"可以依據月亮的哪一項特色知道當天的農曆日期？　①亮度　②方位　③高度角　④月相","answer":"④"},{"id":19,"text":"「朔」會在哪一天出現？①農曆初一　②農曆初八　③農曆十五　④農曆二十六","answer":"①"},{"id":20,"text":"即使在天氣晴朗的時候，下列哪一天也看不見月亮？①農曆初一　②農曆初八　③農曆二十　④農曆二十三","answer":"①"},{"id":21,"text":"高度角觀測器可以同時測量月亮的方位和高度角。","answer":"╳"},{"id":22,"text":"當太陽的方位在西方時，表示已經到了下午的時刻。","answer":"○"},{"id":23,"text":"有時候可以同時看到夕陽和月亮出現在天空中。","answer":"○"},{"id":24,"text":"用眼睛直接觀測太陽的位置變化，是最適當的方法。","answer":"╳"},{"id":25,"text":"月相的規律變化週期大約是一個星期。","answer":"╳"},{"id":26,"text":"婷婷連續觀察月亮三個月，發現月相僅有兩種，就是半圓形和圓形。","answer":"╳"},{"id":27,"text":"雅惠在戶外觀測月亮時，雅惠首先要先面對月亮，再測量月亮的高度角及方位。","answer":"○"},{"id":28,"text":"利用拳頭測量月亮的高度角時，第一個拳頭代表地平線表示0度，不列入計算。","answer":"○"},{"id":29,"text":"用拳頭疊加的方式測量月亮高度角時，當測量到的拳頭愈少，表示月亮的高度角愈大。","answer":"╳"},{"id":30,"text":"觀測月亮時，如果忘記帶高度角觀測器，也可以利用疊加拳頭的方式測量月亮在天空的高度角。","answer":"○"},{"id":31,"text":"同一天中，月亮的位置會隨著時間而不同。","answer":"○"},{"id":32,"text":"月亮的高度角是指月亮到觀測者位置連線與地平面間的夾角。","answer":"○"},{"id":33,"text":"農曆十五可以看到滿月，如果想看到下一次的滿月的話，必須再等十天。","answer":"╳"},{"id":34,"text":"天空中的月亮如果是圓形的，表示當天是農曆十五左右。","answer":"○"}];
+        const wrongStats = {}; 
+        let currentQuestion = null;
+        let batchQueue = [];
+        let selectedQuestions = new Set(); 
+
+        window.onload = () => {
+            document.getElementById('q-count').textContent = questionBank.length;
+            questionBank.forEach(q => wrongStats[q.id] = 0);
+            generateGrid();
+        };
+
+        // 產生題號按鈕
+        function generateGrid() {
+            const grid = document.getElementById('q-grid');
+            grid.innerHTML = "";
+            for(let i = 1; i <= questionBank.length; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                btn.className = "q-btn bg-gray-100 text-gray-700 font-bold text-lg md:text-xl py-3 rounded-lg border border-gray-300 active:bg-gray-300";
+                btn.onclick = () => toggleQuestion(i, btn);
+                grid.appendChild(btn);
+            }
+        }
+
+        // 點擊選取或取消選取題號
+        function toggleQuestion(num, btnElement) {
+            if (selectedQuestions.has(num)) {
+                selectedQuestions.delete(num);
+                btnElement.classList.remove('selected');
+            } else {
+                selectedQuestions.add(num);
+                btnElement.classList.add('selected');
+            }
+            updateStartButton();
+        }
+
+        // 更新開始按鈕狀態
+        function updateStartButton() {
+            const startBtn = document.getElementById('batch-start-btn');
+            if (selectedQuestions.size > 0) {
+                startBtn.classList.remove('hidden');
+                document.getElementById('img-status').textContent = `已選 ${selectedQuestions.size} 題`;
+            } else {
+                startBtn.classList.add('hidden');
+                document.getElementById('img-status').textContent = "";
+            }
+        }
+
+        // --- 測驗流程 ---
+        function startBatchPractice() {
+            if(selectedQuestions.size === 0) return;
+            batchQueue = Array.from(selectedQuestions).sort((a, b) => a - b);
+            document.getElementById('batch-progress').classList.remove('hidden');
+            
+            // 捲動到頂部方便作答
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            loadQuestion(batchQueue[0]);
+        }
+
+        function loadQuestion(qId) {
+            currentQuestion = questionBank[qId - 1];
+            document.getElementById('batch-progress').textContent = `剩 ${batchQueue.length} 題`;
+            document.getElementById('quiz-title').textContent = `第 ${currentQuestion.id} 題`;
+            document.getElementById('quiz-content').textContent = currentQuestion.text;
+            document.getElementById('feedback').textContent = "";
+            document.getElementById('feedback').className = "mt-4 text-center text-xl md:text-2xl font-bold h-10";
+
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.innerHTML = "";
+            // 判斷是否為是非題
+            let options = (currentQuestion.answer === '○' || currentQuestion.answer === '╳' || currentQuestion.text.includes('是非題')) ? ['○', '╳'] : ['①', '②', '③', '④'];
+
+            options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.textContent = opt;
+                btn.className = "btn-option bg-yellow-100 hover:bg-yellow-300 text-yellow-900 text-2xl md:text-3xl font-bold py-4 md:py-6 rounded-xl border-2 border-yellow-400 active:bg-yellow-400 shadow-sm";
+                btn.onclick = () => checkAnswer(opt);
+                optionsContainer.appendChild(btn);
+            });
+
+            document.getElementById('section-menu').classList.add('hidden-section');
+            document.getElementById('section-quiz').classList.remove('hidden-section');
+        }
+
+        function checkAnswer(selectedOpt) {
+            const feedbackBox = document.getElementById('feedback');
+            if (selectedOpt === currentQuestion.answer) {
+                feedbackBox.textContent = "🎉 答對了！";
+                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-green-600";
+                setTimeout(() => {
+                    batchQueue.shift(); 
+                    if (batchQueue.length > 0) {
+                        loadQuestion(batchQueue[0]);
+                    } else { 
+                        alert("🏆 恭喜！所有錯題都已經完全訂正完畢！"); 
+                        // 重置選單狀態
+                        selectedQuestions.clear();
+                        generateGrid();
+                        document.getElementById('batch-start-btn').classList.add('hidden');
+                        document.getElementById('img-status').textContent = "";
+                        backToMenu(); 
+                    }
+                }, 1000);
+            } else {
+                feedbackBox.textContent = "❌ 答錯囉，再試一次！";
+                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-red-500 animate-pulse";
+                wrongStats[currentQuestion.id] += 1;
+                updateStatsTable();
+            }
+        }
+
+        function backToMenu() {
+            document.getElementById('section-quiz').classList.add('hidden-section');
+            document.getElementById('section-menu').classList.remove('hidden-section');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function updateStatsTable() {
+            const tbody = document.getElementById('stats-body');
+            tbody.innerHTML = "";
+            let hasWrongRecord = false;
+            Object.keys(wrongStats).forEach(id => {
+                if (wrongStats[id] > 0) {
+                    hasWrongRecord = true;
+                    const qText = questionBank[id-1].text.substring(0, 15) + "...";
+                    const tr = document.createElement('tr');
+                    tr.className = "border-b bg-red-50";
+                    tr.innerHTML = `<td class="py-2 px-3 font-bold text-gray-700 text-center">${id}</td>
+                                    <td class="py-2 px-3 text-gray-800">${qText}</td>
+                                    <td class="py-2 px-3 text-center font-bold text-red-600">${wrongStats[id]}</td>`;
+                    tbody.appendChild(tr);
+                }
+            });
+            if (!hasWrongRecord) tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>`;
+        }
+    </script>
+</body>
+</html>
