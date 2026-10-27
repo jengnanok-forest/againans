@@ -3,16 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>教師端 - 產生錯題重答系統 (純淨點選版)</title>
-    <!-- 改用靜態的 Tailwind CSS 檔案，徹底解決 iPad 本機檔案無法載入樣式的問題 -->
+    <title>教師端 - 產生錯題重答系統</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
 </head>
 <body class="bg-blue-50 font-sans min-h-screen p-4 md:p-6 flex items-center justify-center">
 
     <div class="max-w-3xl w-full bg-white rounded-xl shadow-lg p-6 md:p-8">
-        <h1 class="text-2xl md:text-3xl font-bold text-center text-blue-600 mb-2">👨‍🏫 教師端：建立錯題任務</h1>
-        <p class="text-center text-gray-500 mb-8 text-sm md:text-base">無截圖辨識功能，純淨手動點選題號版</p>
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-blue-600 mb-8">👨‍🏫 教師端：建立錯題任務</h1>
 
         <div class="border-2 border-dashed border-blue-300 rounded-lg p-4 md:p-6 bg-blue-50 mb-8">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -63,6 +61,16 @@
                 const qText = await readDocxText(qFile);
                 const aText = await readDocxText(aFile);
                 
+                // 1. 抓取單元主題名稱 (優先抓 Word 內文第一行標題，抓不到則抓檔名)
+                const rawLines = qText.split('\n').map(l => l.trim()).filter(l => l !== '');
+                let paperTitle = "";
+                if (rawLines.length > 0 && (rawLines[0].includes('測驗') || rawLines[0].includes('單元') || rawLines[0].includes('學年度'))) {
+                    paperTitle = rawLines[0]; // 內文標題 (如：115學年度四上-第一單元自然測驗-日月星辰)
+                } else {
+                    paperTitle = qFile.name.replace(/\.[^/.]+$/, ""); // 檔案名稱
+                }
+
+                // 2. 過濾題目與解答
                 const qLines = qText.split('\n').map(l => l.trim()).filter(l => l !== '' && !l.includes('學年度') && !l.includes('一、選擇題') && !l.includes('二、是非題'));
                 const aLines = aText.split('\n').map(l => l.trim()).filter(l => l.startsWith('答案：'));
 
@@ -79,7 +87,11 @@
                     questionBank.push({ id: i + 1, text: qLines[i], answer: ansStr });
                 }
 
-                const studentHtmlContent = getStudentTemplate(JSON.stringify(questionBank));
+                // 3. 組合模板並安全替換標題與題庫 JSON，避免範本字串轉義錯誤
+                let studentHtmlContent = getStudentTemplate();
+                studentHtmlContent = studentHtmlContent.replace(/__PAPER_TITLE__/g, paperTitle);
+                studentHtmlContent = studentHtmlContent.replace('__QUESTION_BANK_JSON__', JSON.stringify(questionBank));
+
                 const blob = new Blob([studentHtmlContent], { type: 'text/html' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -91,7 +103,7 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                status.textContent = `✅ 成功生成並下載：${fileName} (共 ${totalCount} 題)`;
+                status.textContent = `✅ 成功生成並下載：${fileName} (主題：${paperTitle})`;
                 status.className = "mt-4 text-center font-bold text-lg text-green-600";
 
             } catch (error) {
@@ -101,21 +113,19 @@
             }
         }
 
-        // 學生端 HTML 模板 
-        function getStudentTemplate(questionBankJson) {
+        // 學生端 HTML 模板 (使用純文字占位符 __PAPER_TITLE__ 以防語法解析錯誤)
+        function getStudentTemplate() {
             return `<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>學生端 - 錯題重答系統</title>
-    <!-- 使用靜態 CSS，避免 iPad 開啟本機 HTML 檔案時因安全機制阻擋動態腳本而跑版 -->
+    <title>__PAPER_TITLE__ - 錯題重答系統</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
     <style>
         body { -webkit-tap-highlight-color: transparent; }
         .hidden-section { display: none; }
         .q-btn { transition: all 0.1s; touch-action: manipulation; }
-        /* 點選後的樣式 (紅色背景與陰影) */
         .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }
         .btn-option { touch-action: manipulation; }
         .btn-option:active { transform: scale(0.95); }
@@ -123,7 +133,8 @@
 </head>
 <body class="bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20">
     <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-lg p-4 md:p-8">
-        <h1 class="text-2xl md:text-3xl font-bold text-center text-green-600 mb-6">🎓 錯題重答練習系統</h1>
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-green-600 mb-2">🎓 錯題重答練習系統</h1>
+        <h2 class="text-xl md:text-2xl font-bold text-center text-blue-800 mb-6 bg-blue-50 py-3 px-4 rounded-xl border border-blue-200">📄 單元主題：__PAPER_TITLE__</h2>
         
         <div id="section-menu" class="mb-8">
             <p id="total-questions-info" class="mb-6 text-sm md:text-lg font-bold text-gray-700 text-center bg-gray-50 py-2 rounded">
@@ -131,14 +142,18 @@
             </p>
             
             <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 md:p-6 mb-8 shadow-sm">
-                <!-- 移除了截圖功能，畫面改為全版的題號點選面板 -->
                 <div class="flex flex-col">
-                    <div class="flex justify-between items-end mb-4">
+                    <div class="flex flex-wrap justify-between items-end mb-4 gap-2">
                         <h2 class="text-xl md:text-2xl font-bold text-purple-800">📌 請點選要重做訂正的題號</h2>
-                        <span id="img-status" class="text-sm font-bold text-purple-600"></span>
+                        <div class="flex items-center gap-3">
+                            <span id="img-status" class="text-sm font-bold text-purple-600"></span>
+                            <button id="select-all-btn" onclick="toggleSelectAll()" class="bg-purple-200 hover:bg-purple-300 text-purple-800 font-bold py-1.5 px-4 rounded-lg shadow-sm transition-colors text-sm md:text-base border border-purple-400">
+                                全選
+                            </button>
+                        </div>
                     </div>
                     <div id="q-grid" class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3 bg-white p-4 md:p-6 rounded-xl border border-purple-200 h-auto max-h-80 overflow-y-auto shadow-inner">
-                        <!-- 題號按鈕會自動產生在這裡 -->
+                        <!-- 題號按鈕 -->
                     </div>
                     <button id="batch-start-btn" onclick="startBatchPractice()" class="mt-6 w-full bg-purple-600 text-white font-bold py-3 md:py-4 px-6 rounded-xl hover:bg-purple-700 shadow animate-pulse hidden text-lg">
                         🚀 確認無誤，開始重答
@@ -180,7 +195,7 @@
     </div>
 
     <script>
-        const questionBank = ${questionBankJson};
+        const questionBank = __QUESTION_BANK_JSON__;
         const wrongStats = {}; 
         let currentQuestion = null;
         let batchQueue = [];
@@ -192,7 +207,6 @@
             generateGrid();
         };
 
-        // 產生題號按鈕
         function generateGrid() {
             const grid = document.getElementById('q-grid');
             grid.innerHTML = "";
@@ -205,7 +219,6 @@
             }
         }
 
-        // 點擊選取或取消選取題號
         function toggleQuestion(num, btnElement) {
             if (selectedQuestions.has(num)) {
                 selectedQuestions.delete(num);
@@ -217,40 +230,60 @@
             updateStartButton();
         }
 
-        // 更新開始按鈕狀態
+        function toggleSelectAll() {
+            const btns = document.getElementById('q-grid').children;
+            const isAllSelected = selectedQuestions.size === questionBank.length;
+
+            for(let i = 1; i <= questionBank.length; i++) {
+                const btn = btns[i-1];
+                if (isAllSelected) {
+                    selectedQuestions.delete(i);
+                    btn.classList.remove('selected');
+                } else {
+                    selectedQuestions.add(i);
+                    btn.classList.add('selected');
+                }
+            }
+            updateStartButton();
+        }
+
         function updateStartButton() {
             const startBtn = document.getElementById('batch-start-btn');
+            const selectAllBtn = document.getElementById('select-all-btn');
+            
+            if (selectedQuestions.size === questionBank.length) {
+                selectAllBtn.textContent = "取消全選";
+            } else {
+                selectAllBtn.textContent = "全選";
+            }
+
             if (selectedQuestions.size > 0) {
                 startBtn.classList.remove('hidden');
-                document.getElementById('img-status').textContent = \`已選 \${selectedQuestions.size} 題\`;
+                document.getElementById('img-status').textContent = "已選 " + selectedQuestions.size + " 題";
             } else {
                 startBtn.classList.add('hidden');
                 document.getElementById('img-status').textContent = "";
             }
         }
 
-        // --- 測驗流程 ---
         function startBatchPractice() {
             if(selectedQuestions.size === 0) return;
             batchQueue = Array.from(selectedQuestions).sort((a, b) => a - b);
             document.getElementById('batch-progress').classList.remove('hidden');
-            
-            // 捲動到頂部方便作答
             window.scrollTo({ top: 0, behavior: 'smooth' });
             loadQuestion(batchQueue[0]);
         }
 
         function loadQuestion(qId) {
             currentQuestion = questionBank[qId - 1];
-            document.getElementById('batch-progress').textContent = \`剩 \${batchQueue.length} 題\`;
-            document.getElementById('quiz-title').textContent = \`第 \${currentQuestion.id} 題\`;
+            document.getElementById('batch-progress').textContent = "剩 " + batchQueue.length + " 題";
+            document.getElementById('quiz-title').textContent = "第 " + currentQuestion.id + " 題";
             document.getElementById('quiz-content').textContent = currentQuestion.text;
             document.getElementById('feedback').textContent = "";
             document.getElementById('feedback').className = "mt-4 text-center text-xl md:text-2xl font-bold h-10";
 
             const optionsContainer = document.getElementById('options-container');
             optionsContainer.innerHTML = "";
-            // 判斷是否為是非題
             let options = (currentQuestion.answer === '○' || currentQuestion.answer === '╳' || currentQuestion.text.includes('是非題')) ? ['○', '╳'] : ['①', '②', '③', '④'];
 
             options.forEach(opt => {
@@ -276,11 +309,11 @@
                         loadQuestion(batchQueue[0]);
                     } else { 
                         alert("🏆 恭喜！所有錯題都已經完全訂正完畢！"); 
-                        // 重置選單狀態
                         selectedQuestions.clear();
                         generateGrid();
                         document.getElementById('batch-start-btn').classList.add('hidden');
                         document.getElementById('img-status').textContent = "";
+                        updateStartButton();
                         backToMenu(); 
                     }
                 }, 1000);
@@ -308,13 +341,13 @@
                     const qText = questionBank[id-1].text.substring(0, 15) + "...";
                     const tr = document.createElement('tr');
                     tr.className = "border-b bg-red-50";
-                    tr.innerHTML = \`<td class="py-2 px-3 font-bold text-gray-700 text-center">\${id}</td>
-                                    <td class="py-2 px-3 text-gray-800">\${qText}</td>
-                                    <td class="py-2 px-3 text-center font-bold text-red-600">\${wrongStats[id]}</td>\`;
+                    tr.innerHTML = '<td class="py-2 px-3 font-bold text-gray-700 text-center">' + id + '</td>' +
+                                    '<td class="py-2 px-3 text-gray-800">' + qText + '</td>' +
+                                    '<td class="py-2 px-3 text-center font-bold text-red-600">' + wrongStats[id] + '</td>';
                     tbody.appendChild(tr);
                 }
             });
-            if (!hasWrongRecord) tbody.innerHTML = \`<tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>\`;
+            if (!hasWrongRecord) tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>';
         }
     <\/script>
 </body>
