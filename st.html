@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>學生端 - 錯題重答系統</title>
+    <!-- 使用靜態 CSS，避免 iPad 開啟本機 HTML 檔案時因安全機制阻擋動態腳本而跑版 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .hidden-section { display: none; }
+        .q-btn { transition: all 0.1s; touch-action: manipulation; }
+        /* 點選後的樣式 (紅色背景與陰影) */
+        .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }
+        .btn-option { touch-action: manipulation; }
+        .btn-option:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20">
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-lg p-4 md:p-8">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-green-600 mb-6">🎓 錯題重答練習系統</h1>
+        
+        <div id="section-menu" class="mb-8">
+            <p id="total-questions-info" class="mb-6 text-sm md:text-lg font-bold text-gray-700 text-center bg-gray-50 py-2 rounded">
+                📚 題庫已載入，共 <span id="q-count" class="text-blue-600"></span> 題。
+            </p>
+            
+            <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 md:p-6 mb-8 shadow-sm">
+                <!-- 移除了截圖功能，畫面改為全版的題號點選面板 -->
+                <div class="flex flex-col">
+                    <div class="flex justify-between items-end mb-4">
+                        <h2 class="text-xl md:text-2xl font-bold text-purple-800">📌 請點選要重做訂正的題號</h2>
+                        <span id="img-status" class="text-sm font-bold text-purple-600"></span>
+                    </div>
+                    <div id="q-grid" class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3 bg-white p-4 md:p-6 rounded-xl border border-purple-200 h-auto max-h-80 overflow-y-auto shadow-inner">
+                        <!-- 題號按鈕會自動產生在這裡 -->
+                    </div>
+                    <button id="batch-start-btn" onclick="startBatchPractice()" class="mt-6 w-full bg-purple-600 text-white font-bold py-3 md:py-4 px-6 rounded-xl hover:bg-purple-700 shadow animate-pulse hidden text-lg">
+                        🚀 確認無誤，開始重答
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 答題區 -->
+        <div id="section-quiz" class="hidden-section bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 md:p-6 mb-8 relative">
+            <div class="flex justify-between items-center mb-4">
+                <button onclick="backToMenu()" class="text-gray-500 hover:text-gray-800 font-bold px-3 py-2 border rounded bg-white shadow-sm text-sm md:text-base">← 返回主選單</button>
+                <span id="batch-progress" class="font-bold text-white bg-purple-600 px-3 py-1 rounded-full shadow text-sm"></span>
+            </div>
+            <h2 class="text-xl md:text-2xl font-bold mb-4 text-yellow-800" id="quiz-title">第 X 題</h2>
+            <div id="quiz-content" class="text-lg md:text-xl bg-white p-4 md:p-6 rounded-lg shadow mb-6 leading-relaxed"></div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4" id="options-container"></div>
+            <div id="feedback" class="mt-4 text-center text-xl md:text-2xl font-bold h-10"></div>
+        </div>
+
+        <!-- 統計區 -->
+        <div id="section-stats" class="overflow-x-auto">
+            <h2 class="text-lg md:text-xl font-bold mb-4 text-gray-800">📊 錯題答題次數統計</h2>
+            <div class="bg-white rounded-lg shadow min-w-[300px] border border-gray-200">
+                <table class="min-w-full text-sm md:text-base">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="py-2 px-3 text-left font-bold w-16 md:w-24">題號</th>
+                            <th class="py-2 px-3 text-left font-bold">題目</th>
+                            <th class="py-2 px-3 text-center font-bold w-20 md:w-32">錯誤</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-body">
+                        <tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const questionBank = [{"id":1,"text":"我們要到下列哪一種水域環境探索，才能觀察到可以適應鹹水和淡水的彈塗魚？　①湖泊　②海洋　③水庫　④河海口交界","answer":"④"},{"id":2,"text":"探索水域環境時，會發現哪一種水域環境含有較高的鹽分？　①海洋　②河流　③蓮花池　④小溪","answer":"①"},{"id":3,"text":"紅樹林植物可以生存在淡水與鹹水的交會處，提供許多生物食物。由此可推論，我們可以在哪一種水域環境觀察到紅樹林植物？　①海洋　②池塘　③溪流　④河海口交界","answer":"④"},{"id":4,"text":"水生植物其中的一大類是浮葉性植物，下列何者不是它的特徵？　①根長在水底土中　②通常有細長柔軟的葉柄　③葉子一定會浮在水面　④整株植物會隨著水流到處移動","answer":"④"},{"id":5,"text":"哪一張圖比較可能是將布袋蓮的葉柄切開後觀察到的樣子？　①　②　③　④","answer":"①"},{"id":6,"text":"香蒲的根長在水底土裡，葉與花挺出水面。由此可知香蒲屬於哪一種水生植物？　①土生性水生植物　②浮葉性水生植物　③挺水性水生植物　④沉水性水生植物","answer":"③"},{"id":7,"text":"小花在公園池塘看到許多美麗的睡蓮，請問下列關於睡蓮的敘述，哪一項錯誤？　①葉子平鋪在水面上　②根在土裡　③葉柄很硬，不會隨著水位高低而改變　④會開花","answer":"③"},{"id":8,"text":"下列關於沉水性水生植物的敘述，何者正確？　①如果水面降低，莖葉會挺出水面　②全株沉在水中生長　③莖通常十分堅硬、不容易彎曲　④根會隨著水流漂浮","answer":"②"},{"id":9,"text":"切開荷花的地下莖，可以看到許多孔洞，這些孔洞有什麼作用？　①儲存空氣　②儲存土壤　③讓小動物躲在裡面　④美觀","answer":"①"},{"id":10,"text":"小慧將布袋蓮壓入水中後再放手，布袋蓮會發生什麼事情？　①葉子的顏色改變　②葉面上的細毛脫落　③往上浮起　④沉在水中不動","answer":"③"},{"id":11,"text":"布袋蓮葉柄中的空氣具有什麼作用？　①讓布袋蓮浮在水面上　②讓布袋蓮沉在水底　③讓布袋蓮隨水流擺動　④讓布袋蓮的根深入土中","answer":"①"},{"id":12,"text":"大苦草是臺灣原生種植物，整株生長在水面下，表示大苦草可能是下列哪一種植物？　①漂浮性水生植物　②浮葉性水生植物　③挺葉性水生植物　④沉水性水生植物","answer":"④"},{"id":13,"text":"水中的蝦子是怎樣運動的？　①利用鰭游泳　②利用後腿跳躍　③利用翅膀飛行　④利用腳游泳和行走","answer":"④"},{"id":14,"text":"蝌蚪利用下列哪一種方式運動？　①靠尾部擺動來前進　②用腳在水面划行　③用鰭划水　④用腹足爬行","answer":"①"},{"id":15,"text":"蛙類通常會用下列哪一種構造來呼吸？①鰓　②肺　③呼吸管　④尾巴","answer":"②"},{"id":16,"text":"魚利用什麼構造呼吸？　①魚鱗　②魚鰓　③眼睛　④魚鰭","answer":"②"},{"id":17,"text":"魚鰓是魚的什麼器官？　①消化器官　②運動器官　③呼吸器官　④感覺器官","answer":"③"},{"id":18,"text":"紅娘華會將身體的哪一部分伸到水面上呼吸？　①頭部　②呼吸管　③全身　④腳","answer":"②"},{"id":19,"text":"下列哪些水生生物的棲息環境通常是在水邊或陸地？ㄅ.魚類ㄆ.蛙類ㄇ.紅娘華①只有ㄅ　②只有ㄆ　③ㄅㄆ　④ㄆㄇ","answer":"④"},{"id":20,"text":"為了保護水生生物的家，下列哪一個做法比較適當？　①購買水生動物到河邊放生　②一起清理海岸垃圾　③排放工業汙水到河流裡　④將海洋生物釣起來玩","answer":"②"},{"id":21,"text":"學校的生態池也是屬於水域環境。","answer":"○"},{"id":22,"text":"河海口交界的水域含鹽量變化大，此處常見的水生動物有招潮蟹和彈塗魚。","answer":"○"},{"id":23,"text":"將海中的小丑魚帶回家裡用淡水養殖，小丑魚依然可以生存。","answer":"╳"},{"id":24,"text":"探索水域環境時，可以利用望遠鏡觀察遠方水面的情況。","answer":"○"},{"id":25,"text":"陸生植物和水生植物的構造一樣，都能生活在水中。","answer":"╳"},{"id":26,"text":"大萍的根沒有固著在水底土裡，會隨著水流漂動。","answer":"○"},{"id":27,"text":"水蘊草的葉子與葉柄中有大量空氣存在，屬於漂浮性水生植物。","answer":"╳"},{"id":28,"text":"浮葉性水生植物的根，通常會生長在水底泥土中裡","answer":"○"},{"id":29,"text":"荷花的葉柄與葉會挺出水面，稱為挺水性植物。","answer":"○"},{"id":30,"text":"水蘊草的莖與葉會沉在水中，即使水位下降，葉子也不會伸出水面。","answer":"○"},{"id":31,"text":"蓋斑鬥魚會用鰭划水，在水中游動。","answer":"○"},{"id":32,"text":"觀察水生池上的水黽，牠會利用腳在水中划水前進。","answer":"╳"},{"id":33,"text":"蛙類利用肺和皮膚呼吸。","answer":"○"},{"id":34,"text":"小欣觀察到工廠旁的溪流顏色混濁，而且聞起來有臭味，他認為這條溪流已經受到工廠汙水汙染了。","answer":"○"},{"id":35,"text":"當海中充滿垃圾時，鯨鯊可能會把塑膠袋當成食物而誤食。","answer":"○"}];
+        const wrongStats = {}; 
+        let currentQuestion = null;
+        let batchQueue = [];
+        let selectedQuestions = new Set(); 
+
+        window.onload = () => {
+            document.getElementById('q-count').textContent = questionBank.length;
+            questionBank.forEach(q => wrongStats[q.id] = 0);
+            generateGrid();
+        };
+
+        // 產生題號按鈕
+        function generateGrid() {
+            const grid = document.getElementById('q-grid');
+            grid.innerHTML = "";
+            for(let i = 1; i <= questionBank.length; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                btn.className = "q-btn bg-gray-100 text-gray-700 font-bold text-lg md:text-xl py-3 rounded-lg border border-gray-300 active:bg-gray-300";
+                btn.onclick = () => toggleQuestion(i, btn);
+                grid.appendChild(btn);
+            }
+        }
+
+        // 點擊選取或取消選取題號
+        function toggleQuestion(num, btnElement) {
+            if (selectedQuestions.has(num)) {
+                selectedQuestions.delete(num);
+                btnElement.classList.remove('selected');
+            } else {
+                selectedQuestions.add(num);
+                btnElement.classList.add('selected');
+            }
+            updateStartButton();
+        }
+
+        // 更新開始按鈕狀態
+        function updateStartButton() {
+            const startBtn = document.getElementById('batch-start-btn');
+            if (selectedQuestions.size > 0) {
+                startBtn.classList.remove('hidden');
+                document.getElementById('img-status').textContent = `已選 ${selectedQuestions.size} 題`;
+            } else {
+                startBtn.classList.add('hidden');
+                document.getElementById('img-status').textContent = "";
+            }
+        }
+
+        // --- 測驗流程 ---
+        function startBatchPractice() {
+            if(selectedQuestions.size === 0) return;
+            batchQueue = Array.from(selectedQuestions).sort((a, b) => a - b);
+            document.getElementById('batch-progress').classList.remove('hidden');
+            
+            // 捲動到頂部方便作答
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            loadQuestion(batchQueue[0]);
+        }
+
+        function loadQuestion(qId) {
+            currentQuestion = questionBank[qId - 1];
+            document.getElementById('batch-progress').textContent = `剩 ${batchQueue.length} 題`;
+            document.getElementById('quiz-title').textContent = `第 ${currentQuestion.id} 題`;
+            document.getElementById('quiz-content').textContent = currentQuestion.text;
+            document.getElementById('feedback').textContent = "";
+            document.getElementById('feedback').className = "mt-4 text-center text-xl md:text-2xl font-bold h-10";
+
+            const optionsContainer = document.getElementById('options-container');
+            optionsContainer.innerHTML = "";
+            // 判斷是否為是非題
+            let options = (currentQuestion.answer === '○' || currentQuestion.answer === '╳' || currentQuestion.text.includes('是非題')) ? ['○', '╳'] : ['①', '②', '③', '④'];
+
+            options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.textContent = opt;
+                btn.className = "btn-option bg-yellow-100 hover:bg-yellow-300 text-yellow-900 text-2xl md:text-3xl font-bold py-4 md:py-6 rounded-xl border-2 border-yellow-400 active:bg-yellow-400 shadow-sm";
+                btn.onclick = () => checkAnswer(opt);
+                optionsContainer.appendChild(btn);
+            });
+
+            document.getElementById('section-menu').classList.add('hidden-section');
+            document.getElementById('section-quiz').classList.remove('hidden-section');
+        }
+
+        function checkAnswer(selectedOpt) {
+            const feedbackBox = document.getElementById('feedback');
+            if (selectedOpt === currentQuestion.answer) {
+                feedbackBox.textContent = "🎉 答對了！";
+                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-green-600";
+                setTimeout(() => {
+                    batchQueue.shift(); 
+                    if (batchQueue.length > 0) {
+                        loadQuestion(batchQueue[0]);
+                    } else { 
+                        alert("🏆 恭喜！所有錯題都已經完全訂正完畢！"); 
+                        // 重置選單狀態
+                        selectedQuestions.clear();
+                        generateGrid();
+                        document.getElementById('batch-start-btn').classList.add('hidden');
+                        document.getElementById('img-status').textContent = "";
+                        backToMenu(); 
+                    }
+                }, 1000);
+            } else {
+                feedbackBox.textContent = "❌ 答錯囉，再試一次！";
+                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-red-500 animate-pulse";
+                wrongStats[currentQuestion.id] += 1;
+                updateStatsTable();
+            }
+        }
+
+        function backToMenu() {
+            document.getElementById('section-quiz').classList.add('hidden-section');
+            document.getElementById('section-menu').classList.remove('hidden-section');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function updateStatsTable() {
+            const tbody = document.getElementById('stats-body');
+            tbody.innerHTML = "";
+            let hasWrongRecord = false;
+            Object.keys(wrongStats).forEach(id => {
+                if (wrongStats[id] > 0) {
+                    hasWrongRecord = true;
+                    const qText = questionBank[id-1].text.substring(0, 15) + "...";
+                    const tr = document.createElement('tr');
+                    tr.className = "border-b bg-red-50";
+                    tr.innerHTML = `<td class="py-2 px-3 font-bold text-gray-700 text-center">${id}</td>
+                                    <td class="py-2 px-3 text-gray-800">${qText}</td>
+                                    <td class="py-2 px-3 text-center font-bold text-red-600">${wrongStats[id]}</td>`;
+                    tbody.appendChild(tr);
+                }
+            });
+            if (!hasWrongRecord) tbody.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>`;
+        }
+    </script>
+</body>
+</html>
