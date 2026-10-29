@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>教師端 - 產生錯題重答系統</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.21/mammoth.browser.min.js"></script>
 </head>
 <body class="bg-blue-50 font-sans min-h-screen p-4 md:p-6 flex items-center justify-center">
 
@@ -31,16 +30,368 @@
     </div>
 
     <script>
-        async function readDocxText(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = function(event) {
-                    mammoth.extractRawText({arrayBuffer: event.target.result})
-                        .then(result => resolve(result.value))
-                        .catch(reject);
-                };
-                reader.readAsArrayBuffer(file);
+        // ================= docx 讀取（不依賴外部函式庫） =================
+        const NS_W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+        const NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+
+        function escHtml(s) {
+            return s.replace(/[&<>"']/g, function(c) {
+                return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
             });
+        }
+
+        // --- 最小化 zip 讀取器 ---
+        async function openZip(arrayBuffer) {
+            const u8 = new Uint8Array(arrayBuffer);
+            const dv = new DataView(arrayBuffer);
+            let eocd = -1;
+            for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) {
+                if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+            }
+            if (eocd < 0) throw new Error('不是有效的 docx 檔案');
+            const count = dv.getUint16(eocd + 10, true);
+            let p = dv.getUint32(eocd + 16, true);
+            const dec = new TextDecoder('utf-8');
+            const entries = {};
+            for (let n = 0; n < count; n++) {
+                if (dv.getUint32(p, true) !== 0x02014b50) break;
+                const nlen = dv.getUint16(p + 28, true), elen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+                entries[dec.decode(u8.subarray(p + 46, p + 46 + nlen))] = {
+                    method: dv.getUint16(p + 10, true),
+                    csize: dv.getUint32(p + 20, true),
+                    lho: dv.getUint32(p + 42, true)
+                };
+                p += 46 + nlen + elen + clen;
+            }
+            return {
+                has: function(name) { return !!entries[name]; },
+                read: async function(name) {
+                    const e = entries[name];
+                    if (!e) return null;
+                    const start = e.lho + 30 + dv.getUint16(e.lho + 26, true) + dv.getUint16(e.lho + 28, true);
+                    const data = u8.subarray(start, start + e.csize);
+                    if (e.method === 0) return data;
+                    if (e.method === 8) {
+                        const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+                        return new Uint8Array(await new Response(stream).arrayBuffer());
+                    }
+                    throw new Error('不支援的壓縮方式');
+                }
+            };
+        }
+
+        function bytesToBase64(u8) {
+            let s = '';
+            for (let i = 0; i < u8.length; i += 0x8000) {
+                s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+            }
+            return btoa(s);
+        }
+
+        function parseSizePx(style) {
+            if (!style) return null;
+            const conv = {pt: 96 / 72, px: 1, 'in': 96, cm: 96 / 2.54, mm: 96 / 25.4};
+            const w = /(?:^|;)\s*width:\s*([\d.]+)(pt|px|in|cm|mm)/.exec(style);
+            const h = /(?:^|;)\s*height:\s*([\d.]+)(pt|px|in|cm|mm)/.exec(style);
+            if (!w) return null;
+            return { w: parseFloat(w[1]) * conv[w[2]], h: h ? parseFloat(h[1]) * conv[h[2]] : 0 };
+        }
+
+        // 取出一個段落內依序出現的 文字 / 換行 / 圖片
+        function collectParts(p) {
+            const parts = [];
+            (function walk(node) {
+                for (const c of node.childNodes) {
+                    if (c.nodeType !== 1) continue;
+                    switch (c.localName) {
+                        case 't': parts.push({k: 't', v: c.textContent}); break;
+                        case 'tab': parts.push({k: 't', v: ' '}); break;
+                        case 'noBreakHyphen': parts.push({k: 't', v: '-'}); break;
+                        case 'br': case 'cr':
+                            if (c.getAttributeNS(NS_W, 'type') !== 'page') parts.push({k: 'br'});
+                            break;
+                        case 'p': case 'Fallback': case 'instrText': case 'delText': break;
+                        case 'imagedata': { // 舊式 VML 圖片 / 內嵌 OLE 物件的預覽圖（本題本的情況）
+                            const rid = c.getAttributeNS(NS_R, 'id');
+                            const size = c.parentNode && c.parentNode.getAttribute ? parseSizePx(c.parentNode.getAttribute('style')) : null;
+                            if (rid) parts.push({k: 'img', rid: rid, size: size});
+                            break;
+                        }
+                        case 'blip': { // 新式 DrawingML 圖片
+                            const rid = c.getAttributeNS(NS_R, 'embed');
+                            let a = c, size = null;
+                            while (a && a.localName !== 'inline' && a.localName !== 'anchor') a = a.parentNode;
+                            if (a) {
+                                for (const x of a.childNodes) {
+                                    if (x.localName === 'extent') size = { w: parseInt(x.getAttribute('cx')) / 9525, h: parseInt(x.getAttribute('cy')) / 9525 };
+                                }
+                            }
+                            if (rid) parts.push({k: 'img', rid: rid, size: size});
+                            break;
+                        }
+                        default: walk(c);
+                    }
+                }
+            })(p);
+            return parts;
+        }
+
+        // 把一張圖轉成瀏覽器能顯示的 data URL；失敗回傳 null
+        async function loadImage(zip, rels, rid, size, cache) {
+            if (cache.has(rid)) return cache.get(rid);
+            let result = null;
+            try {
+                let target = rels[rid];
+                if (target) {
+                    const path = target.charAt(0) === '/' ? target.slice(1) : 'word/' + target;
+                    const bytes = await zip.read(path);
+                    const ext = (path.split('.').pop() || '').toLowerCase();
+                    const mime = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml'}[ext];
+                    if (bytes && mime) {
+                        result = { src: 'data:' + mime + ';base64,' + bytesToBase64(bytes), w: size ? size.w : 0, h: size ? size.h : 0 };
+                    } else if (bytes && ext === 'wmf') {
+                        result = await wmfToPng(bytes, size ? size.w : 0);
+                    }
+                }
+            } catch (err) {
+                console.warn('圖片轉換失敗', rid, err);
+            }
+            cache.set(rid, result);
+            return result;
+        }
+
+        // 讀取 docx，回傳「段落陣列」：{ text, html, imgCount, imgFail }
+        async function readDocxParagraphs(file, withImages) {
+            const zip = await openZip(await file.arrayBuffer());
+            const xmlBytes = await zip.read('word/document.xml');
+            if (!xmlBytes) throw new Error('找不到 document.xml');
+            const doc = new DOMParser().parseFromString(new TextDecoder('utf-8').decode(xmlBytes), 'application/xml');
+
+            const rels = {};
+            if (withImages && zip.has('word/_rels/document.xml.rels')) {
+                const relDoc = new DOMParser().parseFromString(new TextDecoder('utf-8').decode(await zip.read('word/_rels/document.xml.rels')), 'application/xml');
+                for (const r of relDoc.getElementsByTagName('Relationship')) rels[r.getAttribute('Id')] = r.getAttribute('Target');
+            }
+
+            const cache = new Map();
+            const result = [];
+            for (const p of doc.getElementsByTagNameNS(NS_W, 'p')) {
+                let inFallback = false;
+                for (let a = p.parentNode; a; a = a.parentNode) { if (a.localName === 'Fallback') { inFallback = true; break; } }
+                if (inFallback) continue;
+
+                const parts = collectParts(p);
+                const text = parts.filter(function(x) { return x.k === 't'; }).map(function(x) { return x.v; }).join('').trim();
+                let html = '', imgCount = 0, imgFail = 0;
+                for (const part of parts) {
+                    if (part.k === 't') html += escHtml(part.v);
+                    else if (part.k === 'br') html += '<br>';
+                    else if (part.k === 'img' && withImages) {
+                        imgCount++;
+                        const img = await loadImage(zip, rels, part.rid, part.size, cache);
+                        if (img) {
+                            const wStyle = img.w ? 'width:' + Math.round(img.w) + 'px;' : '';
+                            html += '<img src="' + img.src + '" alt="題目圖片" style="' + wStyle + 'max-width:100%;height:auto;">';
+                        } else {
+                            imgFail++;
+                            html += '<span class="text-red-500 text-base">［此題圖片無法顯示，請對照紙本］</span>';
+                        }
+                    }
+                }
+                html = html.replace(/(<br>)+(<img )/g, '$2').replace(/^(<br>|\s|&nbsp;)+|(<br>|\s)+$/g, '');
+                result.push({ text: text, html: html, imgCount: imgCount, imgFail: imgFail });
+            }
+            return result;
+        }
+
+        // ================= WMF（Windows 圖元檔）轉 PNG =================
+        // 瀏覽器無法直接顯示 .wmf，這裡把常見的繪圖指令重畫到 canvas 後輸出 PNG。
+        async function wmfToPng(u8, cssW) {
+            const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+            let off = 0, bbox = null;
+            if (dv.getUint32(0, true) === 0x9AC6CDD7) {
+                bbox = { l: dv.getInt16(6, true), t: dv.getInt16(8, true), r: dv.getInt16(10, true), b: dv.getInt16(12, true) };
+                off = 22;
+            }
+            let p = off + dv.getUint16(off + 2, true) * 2;
+            const recs = [];
+            while (p + 6 <= u8.length) {
+                const size = dv.getUint32(p, true), fn = dv.getUint16(p + 4, true);
+                if (size < 3) break;
+                recs.push({ fn: fn, p: p + 6, end: Math.min(p + size * 2, u8.length) });
+                if (fn === 0) break;
+                p += size * 2;
+            }
+            let org = null, ext = null;
+            for (const r of recs) {
+                if (r.fn === 0x020B) org = { x: dv.getInt16(r.p + 2, true), y: dv.getInt16(r.p, true) };
+                if (r.fn === 0x020C) ext = { x: dv.getInt16(r.p + 2, true), y: dv.getInt16(r.p, true) };
+            }
+            if ((!ext || !ext.x || !ext.y) && bbox) {
+                org = { x: bbox.l, y: bbox.t };
+                ext = { x: bbox.r - bbox.l, y: bbox.b - bbox.t };
+            }
+            if (!ext || !ext.x || !ext.y) return null;
+            if (!org) org = { x: 0, y: 0 };
+
+            const aspect = Math.abs(ext.x) / Math.abs(ext.y);
+            const shownW = cssW > 0 ? cssW : 300;
+            const cw = Math.min(1600, Math.round(shownW * 2)), ch = Math.round(cw / aspect);
+            const canvas = document.createElement('canvas');
+            canvas.width = cw; canvas.height = ch;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+            const sx = cw / ext.x, sy = ch / ext.y;
+            ctx.setTransform(sx, 0, 0, sy, -org.x * sx, -org.y * sy);
+            const minLw = 1 / Math.min(Math.abs(sx), Math.abs(sy));
+
+            const i16 = function(o) { return dv.getInt16(o, true); };
+            const u16 = function(o) { return dv.getUint16(o, true); };
+            const color = function(o) { return 'rgb(' + u8[o] + ',' + u8[o + 1] + ',' + u8[o + 2] + ')'; };
+
+            const objs = [];
+            const addObj = function(o) { let i = 0; while (objs[i]) i++; objs[i] = o; };
+            let pen = { style: 0, w: 0, color: '#000' };
+            let brush = { style: 0, color: '#fff' };
+            let font = null, textColor = '#000', bkColor = '#fff', textAlign = 0, fillMode = 1, drawn = 0;
+            let cur = { x: 0, y: 0 };
+            const stack = [];
+
+            const paint = function(fill, stroke) {
+                if (fill && brush.style === 0) { ctx.fillStyle = brush.color; ctx.fill(fillMode === 2 ? 'nonzero' : 'evenodd'); }
+                if (stroke && pen.style !== 5) {
+                    ctx.strokeStyle = pen.color; ctx.lineWidth = Math.max(pen.w, minLw);
+                    ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+                }
+                drawn++;
+            };
+            const polyPath = function(o, n, close) {
+                ctx.beginPath();
+                for (let i = 0; i < n; i++) {
+                    const x = i16(o + i * 4), y = i16(o + i * 4 + 2);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                if (close) ctx.closePath();
+            };
+            const decodeText = function(bytes) {
+                const cs = font ? font.charset : 0;
+                const enc = {136: 'big5', 134: 'gbk', 128: 'shift_jis', 129: 'euc-kr', 1: 'big5', 204: 'windows-1251'}[cs] || 'windows-1252';
+                try { return new TextDecoder(enc).decode(bytes); } catch (e) { return new TextDecoder('windows-1252').decode(bytes); }
+            };
+            const drawText = function(x, y, bytes) {
+                const s = decodeText(bytes);
+                if (!s.trim()) return;
+                const h = font ? Math.abs(font.height) * (font.height > 0 ? 0.85 : 1) : 12;
+                ctx.save();
+                ctx.font = (font && font.weight >= 600 ? 'bold ' : '') + (font && font.italic ? 'italic ' : '') + h + 'px "' + (font ? font.face : 'sans-serif') + '", "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif';
+                ctx.fillStyle = textColor;
+                const hv = textAlign & 6, vv = textAlign & 24;
+                ctx.textAlign = hv === 6 ? 'center' : (hv === 2 ? 'right' : 'left');
+                ctx.textBaseline = vv === 24 ? 'alphabetic' : (vv === 8 ? 'bottom' : 'top');
+                if (font && font.esc) { ctx.translate(x, y); ctx.rotate(-font.esc / 10 * Math.PI / 180); ctx.fillText(s, 0, 0); }
+                else ctx.fillText(s, x, y);
+                ctx.restore();
+                drawn++;
+            };
+            const drawDib = async function(start, end, srcX, srcY, srcW, srcH, dx, dy, dw, dh) {
+                const dib = u8.subarray(start, end);
+                if (dib.length < 12) return;
+                const dvd = new DataView(dib.buffer, dib.byteOffset, dib.byteLength);
+                const hs = dvd.getUint32(0, true);
+                let bitCount, comp = 0, clrUsed = 0, palEntry = 4, bmpH;
+                if (hs === 12) { bitCount = dvd.getUint16(10, true); palEntry = 3; bmpH = dvd.getInt16(6, true); }
+                else { bitCount = dvd.getUint16(14, true); comp = dvd.getUint32(16, true); clrUsed = dvd.getUint32(32, true); bmpH = dvd.getInt32(8, true); }
+                if (comp === 4 || comp === 5) return;
+                let pal = (clrUsed || (bitCount <= 8 ? (1 << bitCount) : 0)) * palEntry;
+                if (comp === 3 && hs === 40) pal += 12;
+                const bmp = new Uint8Array(14 + dib.length);
+                bmp[0] = 0x42; bmp[1] = 0x4D;
+                new DataView(bmp.buffer).setUint32(2, bmp.length, true);
+                new DataView(bmp.buffer).setUint32(10, 14 + hs + pal, true);
+                bmp.set(dib, 14);
+                const url = URL.createObjectURL(new Blob([bmp], { type: 'image/bmp' }));
+                try {
+                    const img = await new Promise(function(res, rej) {
+                        const im = new Image(); im.onload = function() { res(im); }; im.onerror = rej; im.src = url;
+                    });
+                    let sY = srcY;
+                    if (bmpH > 0 && srcH > 0) sY = img.height - srcY - srcH; // 由下往上存放的 DIB
+                    if (!srcW || !srcH) { srcX = 0; sY = 0; srcW = img.width; srcH = img.height; }
+                    ctx.save();
+                    ctx.translate(dx, dy);
+                    ctx.scale(dw < 0 ? -1 : 1, dh < 0 ? -1 : 1);
+                    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(img, srcX, sY, srcW, srcH, 0, 0, Math.abs(dw), Math.abs(dh));
+                    ctx.restore();
+                    drawn++;
+                } finally { URL.revokeObjectURL(url); }
+            };
+
+            for (const r of recs) {
+                const q = r.p;
+                switch (r.fn) {
+                    case 0x02FA: addObj({ kind: 'pen', style: u16(q) & 0xF, w: Math.abs(i16(q + 2)), color: color(q + 6) }); break;
+                    case 0x02FC: addObj({ kind: 'brush', style: u16(q), color: color(q + 2) }); break;
+                    case 0x02FB: {
+                        let nameBytes = u8.subarray(q + 18, q + 50), z = nameBytes.indexOf(0);
+                        if (z >= 0) nameBytes = nameBytes.subarray(0, z);
+                        let face = 'sans-serif';
+                        try { face = new TextDecoder(u8[q + 13] === 136 ? 'big5' : 'windows-1252').decode(nameBytes) || face; } catch (e) {}
+                        addObj({ kind: 'font', height: i16(q), esc: i16(q + 4), weight: u16(q + 8), italic: u8[q + 10], charset: u8[q + 13], face: face.replace(/"/g, '') });
+                        break;
+                    }
+                    case 0x012D: { const o = objs[u16(q)]; if (o) { if (o.kind === 'pen') pen = o; else if (o.kind === 'brush') brush = o; else if (o.kind === 'font') font = o; } break; }
+                    case 0x01F0: objs[u16(q)] = undefined; break;
+                    case 0x0209: textColor = color(q); break;
+                    case 0x0201: bkColor = color(q); break;
+                    case 0x012E: textAlign = u16(q); break;
+                    case 0x0106: fillMode = u16(q); break;
+                    case 0x001E: ctx.save(); stack.push({ pen: pen, brush: brush, font: font, textColor: textColor, textAlign: textAlign, fillMode: fillMode }); break;
+                    case 0x0127: {
+                        let n = i16(q), times = n < 0 ? -n : Math.max(1, stack.length - n + 1);
+                        while (times-- > 0 && stack.length) { const s = stack.pop(); pen = s.pen; brush = s.brush; font = s.font; textColor = s.textColor; textAlign = s.textAlign; fillMode = s.fillMode; ctx.restore(); }
+                        break;
+                    }
+                    case 0x0416: ctx.beginPath(); ctx.rect(i16(q + 6), i16(q + 4), i16(q + 2) - i16(q + 6), i16(q) - i16(q + 4)); ctx.clip(); break;
+                    case 0x0214: cur = { x: i16(q + 2), y: i16(q) }; break;
+                    case 0x0213: ctx.beginPath(); ctx.moveTo(cur.x, cur.y); cur = { x: i16(q + 2), y: i16(q) }; ctx.lineTo(cur.x, cur.y); paint(false, true); break;
+                    case 0x0324: polyPath(q + 2, u16(q), true); paint(true, true); break;
+                    case 0x0325: polyPath(q + 2, u16(q), false); paint(false, true); break;
+                    case 0x0538: {
+                        const np = u16(q); let pts = q + 2 + np * 2;
+                        ctx.beginPath();
+                        for (let k = 0; k < np; k++) {
+                            const n = u16(q + 2 + k * 2);
+                            for (let i = 0; i < n; i++) { const x = i16(pts + i * 4), y = i16(pts + i * 4 + 2); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+                            ctx.closePath(); pts += n * 4;
+                        }
+                        paint(true, true); break;
+                    }
+                    case 0x041B: ctx.beginPath(); ctx.rect(i16(q + 6), i16(q + 4), i16(q + 2) - i16(q + 6), i16(q) - i16(q + 4)); paint(true, true); break;
+                    case 0x061C: ctx.beginPath(); ctx.rect(i16(q + 10), i16(q + 8), i16(q + 6) - i16(q + 10), i16(q + 4) - i16(q + 8)); paint(true, true); break;
+                    case 0x0418: {
+                        const l = i16(q + 6), t = i16(q + 4), rr = i16(q + 2), b = i16(q);
+                        ctx.beginPath(); ctx.ellipse((l + rr) / 2, (t + b) / 2, Math.abs(rr - l) / 2, Math.abs(b - t) / 2, 0, 0, Math.PI * 2); paint(true, true); break;
+                    }
+                    case 0x0A32: {
+                        const cnt = u16(q + 4), opts = u16(q + 6); let s = q + 8;
+                        if (opts & 6) { if (opts & 2) { ctx.fillStyle = bkColor; ctx.fillRect(i16(q + 8), i16(q + 10), i16(q + 12) - i16(q + 8), i16(q + 14) - i16(q + 10)); } s += 8; }
+                        drawText(i16(q + 2), i16(q), u8.subarray(s, s + cnt)); break;
+                    }
+                    case 0x0521: {
+                        const cnt = u16(q), po = q + 2 + ((cnt + 1) & ~1);
+                        drawText(i16(po + 2), i16(po), u8.subarray(q + 2, q + 2 + cnt)); break;
+                    }
+                    case 0x0B41: // DibStretchBlt
+                        await drawDib(q + 20, r.end, i16(q + 10), i16(q + 8), i16(q + 6), i16(q + 4), i16(q + 18), i16(q + 16), i16(q + 14), i16(q + 12)); break;
+                    case 0x0F43: // StretchDIBits
+                        await drawDib(q + 22, r.end, i16(q + 12), i16(q + 10), i16(q + 8), i16(q + 6), i16(q + 20), i16(q + 18), i16(q + 16), i16(q + 14)); break;
+                    case 0x0940: // DibBitBlt
+                        if (r.end - q > 28) await drawDib(q + 16, r.end, i16(q + 6), i16(q + 4), i16(q + 10), i16(q + 8), i16(q + 14), i16(q + 12), i16(q + 10), i16(q + 8)); break;
+                }
+            }
+            if (!drawn) return null;
+            return { src: canvas.toDataURL('image/png'), w: shownW, h: shownW / aspect };
         }
 
         async function generateStudentFile() {
@@ -58,36 +409,54 @@
             status.className = "mt-4 text-center font-bold text-lg text-blue-600";
 
             try {
-                const qText = await readDocxText(qFile);
-                const aText = await readDocxText(aFile);
-                
-                const rawLines = qText.split('\n').map(l => l.trim()).filter(l => l !== '');
+                const qParas = await readDocxParagraphs(qFile, true);
+                const aParas = await readDocxParagraphs(aFile, false);
+
+                const firstLine = (qParas.find(function(x) { return x.text !== ''; }) || {text: ''}).text;
                 let paperTitle = "";
-                if (rawLines.length > 0 && (rawLines[0].includes('測驗') || rawLines[0].includes('單元') || rawLines[0].includes('學年度'))) {
-                    paperTitle = rawLines[0];
+                if (firstLine && (firstLine.includes('測驗') || firstLine.includes('單元') || firstLine.includes('學年度'))) {
+                    paperTitle = firstLine;
                 } else {
                     paperTitle = qFile.name.replace(/\.[^/.]+$/, "");
                 }
 
-                const qLines = qText.split('\n').map(l => l.trim()).filter(l => l !== '' && !l.includes('學年度') && !l.includes('一、選擇題') && !l.includes('二、是非題'));
-                const aLines = aText.split('\n').map(l => l.trim()).filter(l => l.startsWith('答案：'));
+                // 題目：一個段落 = 一題；只有圖片、沒有文字的段落，歸入上一題
+                const qItems = [];
+                for (const para of qParas) {
+                    if (para.text === '') {
+                        if (para.imgCount > 0 && qItems.length > 0) {
+                            const last = qItems[qItems.length - 1];
+                            last.html += '<br>' + para.html; last.imgCount += para.imgCount; last.imgFail += para.imgFail;
+                        }
+                        continue;
+                    }
+                    if (para.text.includes('學年度') || para.text.includes('一、選擇題') || para.text.includes('二、是非題')) continue;
+                    qItems.push({ text: para.text, html: para.html, imgCount: para.imgCount, imgFail: para.imgFail });
+                }
+                const aLines = aParas.map(function(x) { return x.text; }).filter(function(l) { return l.startsWith('答案：'); });
 
-                if (aLines.length === 0 || qLines.length === 0) {
+                if (aLines.length === 0 || qItems.length === 0) {
                     status.textContent = "❌ 解析失敗，請確認檔案格式。";
                     status.className = "mt-4 text-center font-bold text-lg text-red-500";
                     return;
                 }
 
                 let questionBank = [];
-                const totalCount = Math.min(qLines.length, aLines.length);
-                for(let i = 0; i < totalCount; i++) {
-                    let ansStr = aLines[i].replace('答案：', '').trim();
-                    questionBank.push({ id: i + 1, text: qLines[i], answer: ansStr });
+                const totalCount = Math.min(qItems.length, aLines.length);
+                let imgTotal = 0, imgFailQ = [];
+                for (let i = 0; i < totalCount; i++) {
+                    const ansStr = aLines[i].replace('答案：', '').trim();
+                    const it = qItems[i];
+                    const item = { id: i + 1, text: it.text, answer: ansStr };
+                    if (it.imgCount > 0) { item.html = it.html; item.hasImg = true; imgTotal += it.imgCount; if (it.imgFail > 0) imgFailQ.push(i + 1); }
+                    questionBank.push(item);
                 }
 
+                // 以 replace(字串, 函式) 的方式置入，避免內容中的 $ 符號被誤當成替換語法
+                const json = JSON.stringify(questionBank).replace(/<\//g, '<\\/');
                 let studentHtmlContent = getStudentRawTemplate();
-                studentHtmlContent = studentHtmlContent.replace(/__PAPER_TITLE__/g, paperTitle);
-                studentHtmlContent = studentHtmlContent.replace('__QUESTION_BANK_JSON__', JSON.stringify(questionBank));
+                studentHtmlContent = studentHtmlContent.replace(/__PAPER_TITLE__/g, function() { return escHtml(paperTitle); });
+                studentHtmlContent = studentHtmlContent.replace('__QUESTION_BANK_JSON__', function() { return json; });
 
                 const blob = new Blob([studentHtmlContent], { type: 'text/html;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
@@ -100,12 +469,17 @@
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
 
-                status.textContent = `✅ 成功生成並下載：${fileName} (主題：${paperTitle})`;
+                let msg = `✅ 成功生成並下載：${fileName} (主題：${paperTitle}，共 ${totalCount} 題`;
+                msg += imgTotal > 0 ? `，含 ${imgTotal} 張圖片)` : `)`;
+                let warn = [];
+                if (qItems.length !== aLines.length) warn.push(`⚠️ 題目 ${qItems.length} 題、答案 ${aLines.length} 題，數量不一致，請檢查兩份檔案`);
+                if (imgFailQ.length > 0) warn.push(`⚠️ 第 ${imgFailQ.join('、')} 題的圖片無法轉換，已標註「請對照紙本」。建議在 Word 內將該圖另存/貼成 PNG 後再上傳`);
+                status.innerHTML = escHtml(msg) + warn.map(function(w) { return '<br><span class="text-orange-500">' + escHtml(w) + '</span>'; }).join('');
                 status.className = "mt-4 text-center font-bold text-lg text-green-600";
 
             } catch (error) {
                 console.error(error);
-                status.textContent = "❌ 解析發生錯誤。";
+                status.textContent = "❌ 解析發生錯誤：" + (error && error.message ? error.message : error);
                 status.className = "mt-4 text-center font-bold text-lg text-red-500";
             }
         }
@@ -127,6 +501,7 @@
                 '        .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }',
                 '        .btn-option { touch-action: manipulation; }',
                 '        .btn-option:active { transform: scale(0.95); }',
+                '        #quiz-content img { display: block; margin: 12px auto; max-width: 100%; height: auto; }',
                 '    </style>',
                 '</head>',
                 '<body class="bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20">',
@@ -211,6 +586,7 @@
                 '        let batchQueue = [];',
                 '        let selectedQuestions = new Set();',
                 '        let isPracticeFinished = false;',
+                '        function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }',
                 '        window.onload = function() {',
                 '            document.getElementById("q-count").textContent = questionBank.length;',
                 '            generateGrid();',
@@ -289,7 +665,7 @@
                 '            currentQuestion = questionBank[qId - 1];',
                 '            document.getElementById("batch-progress").textContent = "剩 " + batchQueue.length + " 題";',
                 '            document.getElementById("quiz-title").textContent = "第 " + currentQuestion.id + " 題";',
-                '            document.getElementById("quiz-content").textContent = currentQuestion.text;',
+                '            document.getElementById("quiz-content").innerHTML = currentQuestion.html || esc(currentQuestion.text);',
                 '            document.getElementById("feedback").textContent = "";',
                 '            document.getElementById("feedback").className = "mt-4 text-center text-xl md:text-2xl font-bold h-10";',
                 '            const optionsContainer = document.getElementById("options-container");',
@@ -352,7 +728,7 @@
                 '            if (wrongCount > 0) {',
                 '                if (isPracticeFinished) { retryBtn.classList.remove("hidden"); wrongCountTag.textContent = wrongCount; } else { retryBtn.classList.add("hidden"); }',
                 '                Object.keys(wrongStats).forEach(function(id) {',
-                '                    const qText = questionBank[id-1].text.substring(0, 15) + "...";',
+                '                    const qText = esc(questionBank[id-1].text.substring(0, 15)) + (questionBank[id-1].hasImg ? " 🖼" : "") + "...";',
                 '                    const tr = document.createElement("tr");',
                 '                    tr.className = "border-b bg-red-50";',
                 '                    tr.innerHTML = \'<td class="py-2 px-3 font-bold text-gray-700 text-center">\' + id + \'</td>\' +',
