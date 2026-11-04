@@ -5,27 +5,79 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>教師端 - 產生錯題重答系統</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        .pv-wrap { max-height: 24rem; overflow: auto; }
+        .pv-table th { position: sticky; top: 0; background: #eff6ff; z-index: 1; }
+        .pv-row-off { opacity: 0.45; }
+        .pv-missing select { border-color: #ef4444; background: #fef2f2; }
+    </style>
 </head>
-<body class="bg-blue-50 font-sans min-h-screen p-4 md:p-6 flex items-center justify-center">
+<body class="bg-blue-50 font-sans min-h-screen p-4 md:p-6 flex items-start justify-center">
 
-    <div class="max-w-3xl w-full bg-white rounded-xl shadow-lg p-6 md:p-8">
-        <h1 class="text-2xl md:text-3xl font-bold text-center text-blue-600 mb-8">👨‍🏫 教師端：建立錯題任務</h1>
+    <div class="max-w-3xl w-full bg-white rounded-xl shadow-lg p-6 md:p-8 my-4">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-blue-600 mb-6">👨‍🏫 教師端：建立錯題任務</h1>
 
-        <div class="border-2 border-dashed border-blue-300 rounded-lg p-4 md:p-6 bg-blue-50 mb-8">
+        <div class="border-2 border-dashed border-blue-300 rounded-lg p-4 md:p-6 bg-blue-50 mb-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                    <label class="block font-bold mb-2 text-blue-800">1. 上傳「題目卷」(.docx)：</label>
-                    <input type="file" id="qFile" accept=".docx" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"/>
+                    <label class="block font-bold mb-1 text-blue-800">1. 上傳「題目卷」：</label>
+                    <p class="text-xs text-gray-500 mb-2">題目與解答在同一個檔案也可以，只傳這一份即可</p>
+                    <input type="file" id="qFile" accept=".docx,.dotx,.xlsx,.txt,.md,.csv,.html,.htm" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"/>
                 </div>
                 <div>
-                    <label class="block font-bold mb-2 text-blue-800">2. 上傳「解析卷」(.docx)：</label>
-                    <input type="file" id="aFile" accept=".docx" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"/>
+                    <label class="block font-bold mb-1 text-blue-800">2. 上傳「解答卷」（選填）：</label>
+                    <p class="text-xs text-gray-500 mb-2">可以是有題目的解析卷，也可以只有答案</p>
+                    <input type="file" id="aFile" accept=".docx,.dotx,.xlsx,.txt,.md,.csv,.html,.htm" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-100 file:text-blue-700 hover:file:bg-blue-200"/>
                 </div>
             </div>
-            <button onclick="generateStudentFile()" class="mt-8 w-full bg-blue-600 text-white font-bold py-3 md:py-4 px-4 rounded-lg hover:bg-blue-700 text-lg shadow-md transition-transform hover:scale-105 active:scale-95">
-                ⚡ 產生學生專屬練習網頁
+
+            <details class="mt-5 text-sm text-gray-700">
+                <summary class="cursor-pointer font-bold text-blue-700">或：直接貼上答案文字（選填）</summary>
+                <textarea id="pasteBox" rows="3" placeholder="例如：1.③ 2.② 3.①　或　答案：③②①　或　1~5 ③②①④④" class="mt-2 w-full border border-blue-200 rounded-lg p-2 text-sm"></textarea>
+            </details>
+
+            <details class="mt-3 text-sm text-gray-700">
+                <summary class="cursor-pointer font-bold text-blue-700">支援哪些格式？</summary>
+                <ul class="mt-2 list-disc pl-5 space-y-1 text-gray-600">
+                    <li><b>檔案</b>：.docx（含圖片、表格）、<b>.xlsx / .csv 答案表（欄位：題號｜答案｜解析）</b>、.txt、.html；舊版 .doc、PDF 請先另存成 .docx</li>
+                    <li><b>題目 + 解答在同一檔</b>：題後有「答案：③」、行內「（③）」、題後「【答案】」，或最後附一整段答案表</li>
+                    <li><b>解答卷有題目</b>：「1. ③　說明」「1.（2分）③」「第1題 答案③」</li>
+                    <li><b>Excel 答案表</b>：第一列為「題號、答案、解析」，解析欄可留空；小題題號可寫 11-1 或 11(1)；想分大題可加一欄「題型」（如 選擇題、是非題）</li>
+                    <li><b>解答卷只有答案</b>：「1.③ 2.② 3.①」、「答案：③②①」、「1~5 ③②①④④」、「1 A 2 C 3 B」、直式或橫式答案表</li>
+                    <li><b>答案符號</b>：①②③④、A B C D、1 2 3 4、○ ╳ × ✕ O X、對 錯</li>
+                    <li>填充題、問答題等無法自動批改的題目會自動略過</li>
+                </ul>
+            </details>
+
+            <button onclick="analyzeFiles()" class="mt-6 w-full bg-blue-600 text-white font-bold py-3 md:py-4 px-4 rounded-lg hover:bg-blue-700 text-lg shadow-md transition-transform hover:scale-105 active:scale-95">
+                🔍 解析檔案並預覽
             </button>
             <p id="status-msg" class="mt-4 text-center font-bold text-lg min-h-[24px]"></p>
+        </div>
+
+        <div id="preview-area" class="hidden border border-blue-200 rounded-lg p-4 md:p-6">
+            <h2 class="text-xl font-bold text-blue-700 mb-3">📋 解析結果預覽（可直接修改答案）</h2>
+            <div id="pv-notes" class="text-sm mb-3 space-y-1"></div>
+            <label class="block text-sm font-bold text-gray-700 mb-1">單元主題（會顯示在學生網頁上）：</label>
+            <input id="titleInput" type="text" class="w-full border border-gray-300 rounded-lg px-3 py-2 mb-4"/>
+            <div class="pv-wrap border border-gray-200 rounded-lg">
+                <table class="pv-table min-w-full text-sm">
+                    <thead>
+                        <tr>
+                            <th class="py-2 px-2 w-10"><input type="checkbox" id="pv-all" checked onchange="pvToggleAll(this.checked)"></th>
+                            <th class="py-2 px-2 text-left w-28">題號</th>
+                            <th class="py-2 px-2 text-left">題目</th>
+                            <th class="py-2 px-2 text-center w-28">答案</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pv-body"></tbody>
+                </table>
+            </div>
+            <p id="pv-count" class="text-sm text-gray-600 mt-2"></p>
+            <button onclick="generateStudentFile()" class="mt-4 w-full bg-green-600 text-white font-bold py-3 md:py-4 px-4 rounded-lg hover:bg-green-700 text-lg shadow-md transition-transform hover:scale-105 active:scale-95">
+                ⚡ 產生學生專屬練習網頁
+            </button>
+            <p id="gen-msg" class="mt-4 text-center font-bold min-h-[24px]"></p>
         </div>
     </div>
 
@@ -160,11 +212,12 @@
             return result;
         }
 
-        // 讀取 docx，回傳「段落陣列」：{ text, html, imgCount, imgFail }
+
+        // 讀取 docx，回傳「段落陣列」：{ text, html, imgCount, imgFail }（表格的短列會合併成一行）
         async function readDocxParagraphs(file, withImages) {
             const zip = await openZip(await file.arrayBuffer());
             const xmlBytes = await zip.read('word/document.xml');
-            if (!xmlBytes) throw new Error('找不到 document.xml');
+            if (!xmlBytes) throw new Error('找不到 document.xml，這可能不是 Word 檔');
             const doc = new DOMParser().parseFromString(new TextDecoder('utf-8').decode(xmlBytes), 'application/xml');
 
             const rels = {};
@@ -176,8 +229,12 @@
             const cache = new Map();
             const result = [];
             for (const p of doc.getElementsByTagNameNS(NS_W, 'p')) {
-                let inFallback = false;
-                for (let a = p.parentNode; a; a = a.parentNode) { if (a.localName === 'Fallback') { inFallback = true; break; } }
+                let inFallback = false, tc = null, tr = null;
+                for (let a = p.parentNode; a; a = a.parentNode) {
+                    if (a.localName === 'Fallback') { inFallback = true; break; }
+                    if (a.localName === 'tc' && !tc) tc = a;
+                    if (a.localName === 'tr' && !tr) tr = a;
+                }
                 if (inFallback) continue;
 
                 const parts = collectParts(p);
@@ -196,12 +253,37 @@
                             imgFail++;
                             html += '<span class="text-red-500 text-base">［此題圖片無法顯示，請對照紙本］</span>';
                         }
+                    } else if (part.k === 'img') {
+                        imgCount++;
                     }
                 }
                 html = html.replace(/(<br>)+(<img )/g, '$2').replace(/^(<br>|\s|&nbsp;)+|(<br>|\s)+$/g, '');
-                result.push({ text: text, html: html, imgCount: imgCount, imgFail: imgFail });
+                result.push({ text: text, html: html, imgCount: imgCount, imgFail: imgFail, _tr: tr, _tc: tc });
             }
-            return result;
+            return mergeTableRows(result);
+        }
+
+        // 表格中「每格都很短」的列（例如：題號 | 答案）合併成一行文字；其他情況維持逐段
+        function mergeTableRows(list) {
+            const out = [];
+            const strip = function(x) { return { text: x.text, html: x.html, imgCount: x.imgCount, imgFail: x.imgFail }; };
+            let i = 0;
+            while (i < list.length) {
+                const p = list[i];
+                if (!p._tr) { out.push(strip(p)); i++; continue; }
+                let j = i; const grp = [];
+                while (j < list.length && list[j]._tr === p._tr) { grp.push(list[j]); j++; }
+                const cells = new Set(grp.map(function(x) { return x._tc; })).size;
+                const short = grp.every(function(x) { return x.imgCount === 0 && x.text.length <= 16; });
+                if (cells >= 2 && short) {
+                    const text = grp.map(function(x) { return x.text; }).filter(Boolean).join(' ');
+                    out.push({ text: text, html: escHtml(text), imgCount: 0, imgFail: 0 });
+                } else {
+                    grp.forEach(function(x) { out.push(strip(x)); });
+                }
+                i = j;
+            }
+            return out;
         }
 
         // ================= WMF（Windows 圖元檔）轉 PNG =================
@@ -394,358 +476,865 @@
             return { src: canvas.toDataURL('image/png'), w: shownW, h: shownW / aspect };
         }
 
-        async function generateStudentFile() {
-            const qFile = document.getElementById('qFile').files[0];
-            const aFile = document.getElementById('aFile').files[0];
-            const status = document.getElementById('status-msg');
 
-            if (!qFile || !aFile) {
-                status.textContent = "❌ 請確認兩份 Word 檔案都已上傳！";
-                status.className = "mt-4 text-center font-bold text-lg text-red-500";
-                return;
+
+
+        // ================= 解析核心 =================
+        // ================= 解析核心（純文字邏輯，不依賴 DOM） =================
+        // 輸入：段落陣列 [{text, html, imgCount, imgFail}]
+        // 輸出：題目 items、獨立答案 answers、章節 sections
+
+        // 全形→半形（逐字 1:1 對應，index 不會位移）
+        function norm(s) {
+            return String(s)
+                .replace(/[\u200b\u200c\u200d\ufeff]/g, ' ')
+                .replace(/[Ａ-Ｚａ-ｚ０-９]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+                .replace(/[\u3000\u00a0\t]/g, ' ')
+                .replace(/（/g, '(').replace(/）/g, ')')
+                .replace(/：/g, ':').replace(/．/g, '.').replace(/，/g, ',').replace(/；/g, ';')
+                .replace(/［/g, '[').replace(/］/g, ']');
+        }
+
+        var CIRC = '\\u2460-\\u2473\\u2776-\\u277f\\u24f5-\\u24fe\\u2474-\\u2487';
+        var TOK_SRC = '(?:[' + CIRC + ']|[○◯〇⭕✓✔√╳×✕✗✘✖❌☒]|正確(?![\\u4e00-\\u9fa5A-Za-z0-9])|錯誤(?![\\u4e00-\\u9fa5A-Za-z0-9])|[對錯](?![\\u4e00-\\u9fa5A-Za-z0-9])|[A-E](?![A-Za-z])|[OXTF](?![A-Za-z]))';
+        var TOK_G = new RegExp(TOK_SRC, 'g');
+
+        // 答案符號 → 標準值：選擇題 '1'~'10'，是非題 'O' / 'X'
+        function tokVal(t) {
+            var c = t.charCodeAt(0);
+            if (c >= 0x2460 && c <= 0x2473) return String(c - 0x2460 + 1);
+            if (c >= 0x2776 && c <= 0x277f) return String(c - 0x2776 + 1);
+            if (c >= 0x24f5 && c <= 0x24fe) return String(c - 0x24f5 + 1);
+            if (c >= 0x2474 && c <= 0x2487) return String(c - 0x2474 + 1);
+            if ('○◯〇⭕✓✔√'.indexOf(t) >= 0 || t === '對' || t === '正確' || t === 'T' || t === 'O') return 'O';
+            if ('╳×✕✗✘✖❌☒'.indexOf(t) >= 0 || t === '錯' || t === '錯誤' || t === 'F' || t === 'X') return 'X';
+            if (/^[A-E]$/.test(t)) return String(t.charCodeAt(0) - 64);
+            if (/^[a-e]$/.test(t)) return String(t.charCodeAt(0) - 96);
+            if (/^[0-9]$/.test(t)) return t;
+            return null;
+        }
+
+        // ---------- 找出題目內的選項（①②③④ / (A)(B) / A. B. / (1)(2)(3)） ----------
+        function markerList(n, style) {
+            var list = [], m, re;
+            if (style === 'c') {
+                re = new RegExp('[' + CIRC + ']', 'g');
+                while ((m = re.exec(n))) list.push({ idx: +tokVal(m[0]), pos: m.index });
+            } else if (style === 'p') {
+                re = /\(\s*([A-E])\s*\)/g;
+                while ((m = re.exec(n))) list.push({ idx: m[1].charCodeAt(0) - 64, pos: m.index });
+            } else if (style === 'l') {
+                re = /(?<![A-Za-z])([A-E])\s*[.、]/g;
+                while ((m = re.exec(n))) list.push({ idx: m[1].charCodeAt(0) - 64, pos: m.index });
+            } else if (style === 'n') {
+                re = /\(\s*([1-9])\s*\)/g;
+                while ((m = re.exec(n))) {
+                    var before = n.slice(Math.max(0, m.index - 10), m.index);
+                    if (/\(\s*\)\s*$/.test(before)) continue;       // 前面緊接空白括號 →（　）(1) 是小題編號，不是選項
+                    list.push({ idx: +m[1], pos: m.index });
+                }
             }
+            return list;
+        }
 
-            status.textContent = "⏳ 網頁生成中，請稍候...";
-            status.className = "mt-4 text-center font-bold text-lg text-blue-600";
+        // opt: {min: 至少幾個選項, any: 是否允許不從第1個開始}
+        function findOptions(n, opt) {
+            opt = opt || {};
+            var best = null, styles = ['c', 'p', 'l', 'n'];
+            for (var si = 0; si < styles.length; si++) {
+                var st = styles[si];
+                var min = opt.min || (st === 'n' ? 3 : 2);
+                if (st === 'n' && min < 3) min = 3;
+                var list = markerList(n, st);
+                for (var a = 0; a < list.length; a++) {
+                    if (!opt.any && list[a].idx !== 1) continue;
+                    var run = [list[a]], want = list[a].idx + 1;
+                    for (var b = a + 1; b < list.length; b++) {
+                        if (list[b].idx === want) { run.push(list[b]); want++; }
+                    }
+                    if (run.length >= min && (!best || run.length > best.count)) {
+                        best = { style: st, count: run.length, pos: run.map(function(x) { return x.pos; }), first: run[0].idx };
+                    }
+                }
+            }
+            return best;
+        }
 
-            try {
-                const qParas = await readDocxParagraphs(qFile, true);
-                const aParas = await readDocxParagraphs(aFile, false);
+        function leadMarker(n) {
+            var m = new RegExp('^\\s*(?:([' + CIRC + '])|\\(\\s*([A-E])\\s*\\)|([A-E])\\s*[.、])').exec(n);
+            if (!m) return null;
+            if (m[1]) return { style: 'c', idx: +tokVal(m[1]) };
+            if (m[2]) return { style: 'p', idx: m[2].charCodeAt(0) - 64 };
+            return { style: 'l', idx: m[3].charCodeAt(0) - 64 };
+        }
 
-                const firstLine = (qParas.find(function(x) { return x.text !== ''; }) || {text: ''}).text;
-                let paperTitle = "";
-                if (firstLine && (firstLine.includes('測驗') || firstLine.includes('單元') || firstLine.includes('學年度'))) {
-                    paperTitle = firstLine;
-                } else {
-                    paperTitle = qFile.name.replace(/\.[^/.]+$/, "");
+        // ---------- 答案行辨識 ----------
+        var LABEL_RE = /^[【\[(]?\s*(?:正確答案|參考答案|標準答案|答案|解答|Ans(?:wer)?|答(?=\s*:))\s*[】\])]?\s*:?\s*/i;
+        var SCORE_PAREN_RE = /^[(\[]\s*[^)\]]{0,14}分[^)\]]{0,10}[)\]]\s*/;
+        var PAIR_G = new RegExp('(\\d{1,3})(?:\\s*[.:\\-、)]\\s*\\(?\\s*(' + TOK_SRC + '|[1-5](?!\\d))|\\s+\\(?\\s*(' + TOK_SRC + '))\\s*\\)?', 'g');
+        var SUB_G = new RegExp('\\(\\s*(\\d{1,2})\\s*\\)\\s*(' + TOK_SRC + ')', 'g');
+
+        function tokensIn(str) {
+            var out = [], m, re = new RegExp(TOK_SRC, 'g');
+            while ((m = re.exec(str))) out.push(m[0]);
+            return out;
+        }
+
+        // 解析「去掉編號/標籤之後」的內容
+        function parseBody(rest, labeled) {
+            var m, subs = [];
+            SUB_G.lastIndex = 0;
+            if (new RegExp('^\\(\\s*\\d{1,2}\\s*\\)\\s*' + TOK_SRC).test(rest)) {
+                while ((m = SUB_G.exec(rest))) subs.push({ sub: +m[1], val: tokVal(m[2]) });
+                if (subs.length) return subs;
+            }
+            if (labeled) {
+                // 帶編號的成對答案  例：答案：1.③ 2.② 3.①
+                var pr = parsePairsLine(rest);
+                if (pr) return pr;
+                var seq = new RegExp('^\\(?\\s*(' + TOK_SRC + ')\\s*\\)?((?:[\\s,;/、]*\\(?\\s*' + TOK_SRC + '\\s*\\)?)*)').exec(rest);
+                if (seq) {
+                    return tokensIn(seq[0]).map(function(t) { return { val: tokVal(t) }; });
+                }
+                var dl = /^\(?\s*([1-5](?:\s*[,;、/ ]\s*[1-5])+)\s*\)?\s*$/.exec(rest);
+                if (dl) return dl[1].replace(/[^1-5]/g, '').split('').map(function(x) { return { val: x }; });
+                var d = /^\(?\s*([1-5a-e])\s*\)?(?![A-Za-z0-9])/.exec(rest);
+                if (d) return [{ val: tokVal(d[1]) }];
+                var dd = /^([1-5]{2,})\s*$/.exec(rest);
+                if (dd) return dd[1].split('').map(function(x) { return { val: x }; });
+                return null;
+            }
+            var one = new RegExp('^\\(?\\s*(' + TOK_SRC + ')\\s*\\)?').exec(rest);
+            if (one) {
+                var after = rest.slice(one[0].length);
+                var fo = findOptions(rest, { min: 2 });
+                if (fo && fo.count >= 2) return null;                        // 其實是選項列，不是答案
+                if (/^[A-E]$/.test(one[1]) && /^[A-Za-z]/.test(after)) return null;
+                return [{ val: tokVal(one[1]) }];
+            }
+            return null;
+        }
+
+        // 整行都是「題號+答案」成對  例：1.③ 2.② 3.①  或  1:A 2:B
+        function parsePairsLine(s) {
+            var out = [], m;
+            PAIR_G.lastIndex = 0;
+            var rem = s;
+            while ((m = PAIR_G.exec(s))) {
+                out.push({ num: +m[1], val: tokVal(m[2] || m[3]) });
+            }
+            if (out.length < 2) return null;
+            rem = s.replace(PAIR_G, '').replace(/[\s,;、]/g, '');
+            if (rem.length > 0) return null;
+            return out;
+        }
+
+        function parseAnswerLine(text, loose) {
+            var s = norm(text).trim();
+            if (!s) return null;
+            var m, res;
+
+            // A. 有「答案：」標籤
+            m = LABEL_RE.exec(s);
+            if (m) {
+                var rest = s.slice(m[0].length);
+                res = parseBody(rest, true);
+                return res && res.length ? res : null;
+            }
+            // C. 整行成對  1.③ 2.② 3.①
+            res = parsePairsLine(s);
+            if (res) return res;
+            // D. 範圍  1-5 ③②①④④
+            m = /^(\d{1,3})\s*[-~到至]\s*(\d{1,3})\s*[:.\s]\s*((?:\(?\s*(?:[A-E○╳×✕O X]|[\u2460-\u2473\u2776-\u277f])\s*\)?[\s,;、]*)+)$/.exec(s);
+            if (m) {
+                var toks = tokensIn(m[3]), a = +m[1];
+                if (toks.length >= 2) return toks.map(function(t, i) { return { num: a + i, val: tokVal(t) }; });
+            }
+            // B. 題號 + 答案  1. ③ ...
+            m = /^(?:第\s*)?(\d{1,3})\s*(?:題\s*[.:、)]?|[.:、)\-]|\s)\s*/.exec(s);
+            if (m) {
+                var num = +m[1];
+                var r2 = s.slice(m[0].length).replace(SCORE_PAREN_RE, '').replace(/^(?:答案|答|ANS)\s*:?\s*/i, '');
+                res = parseBody(r2, false);
+                if (!res && /^[1-5]$/.test(r2.trim())) res = [{ val: r2.trim() }];
+                if (res && res.length) {
+                    return res.map(function(e) { var o = { val: e.val, num: num }; if (e.sub) o.sub = e.sub; return o; });
+                }
+                return null;
+            }
+            // E. 純答案串  ③②①④④  或  ○╳○○╳
+            m = new RegExp('^(?:\\(?\\s*' + TOK_SRC + '\\s*\\)?[\\s,;、/]*){2,}$').exec(s);
+            if (m) {
+                var tk = tokensIn(s);
+                if (tk.length >= 2) return tk.map(function(t) { return { val: tokVal(t) }; });
+            }
+            // F. 寬鬆模式（整份文件都是答案時）：「③　說明文字」或單獨一個符號
+            if (loose) {
+                var f = new RegExp('^\\(?\\s*(' + TOK_SRC + ')\\s*\\)?(?:\\s|[.:、]|$)').exec(s);
+                if (f) {
+                    var fo2 = findOptions(s, { min: 2 });
+                    if (!(fo2 && fo2.count >= 2)) return [{ val: tokVal(f[1]) }];
+                }
+            }
+            return null;
+        }
+
+        // ---------- 章節標題 ----------
+        var HEAD_RE = /^\s*(?:[一二三四五六七八九十百]+\s*[、.:]\s*|第\s*[一二三四五六七八九十\d]+\s*(?:部分|大題|題組|節)?\s*[、.:]?\s*|[IVX]+\s*[.、]\s*|\d+\s*[.、]\s*(?=(?:選擇|是非|判斷|填充)))?(單選題|多選題|選擇題|是非題|判斷題|對錯題|填充題|填空題|簡答題|問答題|回答下列問題|回答問題|配合題|閱讀題|綜合題|看圖題|題組)/;
+        var STOP_RE = /^\s*[【\[(]?\s*(?:配分說明|評分標準|評分說明|評分準則|配分表)/;
+        var ANSHEAD_RE = /^\s*(?:[一二三四五六七八九十]+\s*[、.]\s*)?[【\[(]?\s*(?:參考答案|標準答案|正確答案|答案與解析|解答與解析|解析與答案|答案|解答|解析)\s*[】\])]?\s*[:：]?\s*$/;
+        var SKIP_RE = /^\s*[【\[(]?\s*(?:解析|詳解|解說|說明|備註|提示)\s*[】\])]?\s*[:：]/;
+
+        function headingInfo(t) {
+            var n = norm(t);
+            if (n.length > 90) return null;
+            var m = HEAD_RE.exec(n);
+            if (!m) return null;
+            var kw = m[1], type = 'other';
+            if (/是非|判斷|對錯/.test(kw)) type = 'tf';
+            else if (/選擇/.test(kw)) type = 'mc';
+            var title = t.replace(/^\s*(?:[一二三四五六七八九十百]+\s*[、.．:：]\s*|第\s*[一二三四五六七八九十\d]+\s*(?:部分|大題|題組|節)?\s*[、.．:：]?\s*)/, '');
+            title = title.split(/[:：(（\[【]/)[0].trim() || kw;
+            return { type: type, title: title };
+        }
+
+        // ---------- 題目前綴清理 ----------
+        function stripLead(text) {
+            var out = text;
+            for (var k = 0; k < 3; k++) {
+                var n = norm(out);
+                var m = /^\s*(?:第\s*\d+\s*題\s*[.:、]?\s*|\d{1,3}\s*[.、:)]\s*|\(\s*\)\s*)/.exec(n);
+                if (!m || !m[0].length) break;
+                out = out.slice(m[0].length);
+            }
+            return out;
+        }
+        function leadNum(text) {
+            var n = norm(text);
+            var m = /^\s*(?:第\s*(\d{1,3})\s*題|(\d{1,3})\s*[.、:)])/.exec(n);
+            if (m) return +(m[1] || m[2]);
+            return null;
+        }
+        function leadSub(text) {
+            var n = norm(text).replace(/^\s*\(\s*\)\s*/, '');
+            var m = /^\s*\(\s*(\d{1,2})\s*\)/.exec(n);
+            return m ? +m[1] : null;
+        }
+
+        // 從題目文字中取出內嵌答案：「答案：③」或「（③）」
+        function extractInline(text) {
+            var n = norm(text), val = null, out = text, m;
+            var lab = new RegExp('(?:答案|解答|Ans(?:wer)?)\\s*:?\\s*(' + TOK_SRC + '|[1-5](?!\\d))', 'i').exec(n);
+            if (lab && lab.index > 0) {
+                val = tokVal(lab[1]);
+                out = out.slice(0, lab.index).replace(/[【\[(\s]+$/, '');
+                return { text: out, val: val };
+            }
+            var fo = findOptions(n, { min: 2 });
+            var limit = fo ? fo.pos[0] : n.length;
+            var re = new RegExp('\\(\\s*(' + TOK_SRC + ')\\s*\\)', 'g');
+            while ((m = re.exec(n))) {
+                if (m.index >= limit) break;
+                var t = m[1];
+                if (/^[A-E]$/.test(t) && fo && fo.style === 'p') continue;
+                val = tokVal(t);
+                out = out.slice(0, m.index) + '（　）' + out.slice(m.index + m[0].length);
+                break;
+            }
+            return { text: out, val: val };
+        }
+
+        // 把含選項的段落排成「題幹 + 一行行選項」
+        function fmtParaHtml(text) {
+            var n = norm(text);
+            var r = findOptions(n, { min: 1, any: true });
+            if (!r) return escHtml(text);
+            var stem = text.slice(0, r.pos[0]).trim();
+            var opts = r.pos.map(function(p, k) { return text.slice(p, k + 1 < r.pos.length ? r.pos[k + 1] : text.length).trim(); });
+            return (stem ? escHtml(stem) : '') + '<div class="opts">' + opts.map(function(o) { return '<span class="opt">' + escHtml(o) + '</span>'; }).join('') + '</div>';
+        }
+
+        // ---------- 解析一份文件 ----------
+        function parseDoc(paras) {
+            var n = paras.length, i, p;
+            var cls = new Array(n), nb = 0, na = 0;
+            for (i = 0; i < n; i++) {
+                p = paras[i];
+                var t0 = (p.text || '').trim();
+                if (!t0 || p.imgCount > 0) continue;
+                if (STOP_RE.test(t0)) break;
+                nb++;
+                if (SKIP_RE.test(t0) || ANSHEAD_RE.test(t0) || headingInfo(t0)) continue;
+                var e = parseAnswerLine(t0, false);
+                if (e) { cls[i] = e; na++; }
+            }
+            var ansOnly = na >= 3 && nb > 0 && na / nb >= 0.6;
+
+            var sec = { ord: 0, type: 'auto', title: '' }, secCount = 0;
+            var items = [], answers = [], cur = null, pendingImgs = [];
+
+            for (i = 0; i < n; i++) {
+                p = paras[i];
+                var t = (p.text || '').trim();
+                if (STOP_RE.test(t)) break;
+
+                if (!t) {
+                    if (p.imgCount > 0 && !ansOnly) {
+                        if (cur) { cur.parts.push(p); } else { pendingImgs.push(p); }
+                    }
+                    continue;
+                }
+                if (SKIP_RE.test(t)) continue;
+                if (ANSHEAD_RE.test(t) && !cls[i]) {
+                    secCount++;
+                    sec = { ord: secCount, type: 'other', title: '' };
+                    cur = null; pendingImgs = [];
+                    continue;
                 }
 
-                // 題目：一個段落 = 一題；只有圖片、沒有文字的段落，歸入上一題
-                const qItems = [];
-                for (const para of qParas) {
-                    if (para.text === '') {
-                        if (para.imgCount > 0 && qItems.length > 0) {
-                            const last = qItems[qItems.length - 1];
-                            last.html += '<br>' + para.html; last.imgCount += para.imgCount; last.imgFail += para.imgFail;
-                        }
+                var entries = cls[i];
+                if (!entries && ansOnly && p.imgCount === 0 && !headingInfo(t)) entries = parseAnswerLine(t, true);
+                if (entries && p.imgCount === 0) {
+                    for (var k = 0; k < entries.length; k++) {
+                        var en = entries[k];
+                        answers.push({ val: en.val, num: en.num == null ? null : en.num, sub: en.sub == null ? null : en.sub, pos: i, secOrd: sec.ord, secType: sec.type, secTitle: sec.title });
+                    }
+                    continue;
+                }
+                var h = headingInfo(t);
+                if (h) {
+                    secCount++;
+                    sec = { ord: secCount, type: h.type, title: h.title };
+                    cur = null; pendingImgs = [];
+                    continue;
+                }
+                if (ansOnly) continue;
+
+                // ---- 題目分段 ----
+                var nt = norm(t);
+                var lm = leadMarker(nt);
+                if (cur && lm) {
+                    var ci = findOptions(norm(cur.fullText), { min: 1, any: false });
+                    var have = ci ? ci.count : 0;
+                    var okStyle = !ci || ci.style === lm.style;
+                    if (lm.idx === have + 1 && okStyle) {
+                        var ex = extractInline(t);
+                        if (ex.val && !cur.inline) cur.inline = ex.val;
+                        cur.parts.push({ text: ex.text, html: p.html, imgCount: p.imgCount, imgFail: p.imgFail });
+                        cur.fullText += '\n' + ex.text;
                         continue;
                     }
-                    if (para.text.includes('學年度') || para.text.includes('一、選擇題') || para.text.includes('二、是非題')) continue;
-                    qItems.push({ text: para.text, html: para.html, imgCount: para.imgCount, imgFail: para.imgFail });
                 }
-                const aLines = aParas.map(function(x) { return x.text; }).filter(function(l) { return l.startsWith('答案：'); });
+                var ex2 = extractInline(t);
+                cur = {
+                    pos: i, sec: sec, inline: ex2.val || null,
+                    parts: pendingImgs.concat([{ text: ex2.text, html: p.html, imgCount: p.imgCount, imgFail: p.imgFail }]),
+                    fullText: ex2.text, rawText: t
+                };
+                pendingImgs = [];
+                items.push(cur);
+            }
+            return { items: items, answers: answers, ansOnly: ansOnly };
+        }
 
-                if (aLines.length === 0 || qItems.length === 0) {
-                    status.textContent = "❌ 解析失敗，請確認檔案格式。";
-                    status.className = "mt-4 text-center font-bold text-lg text-red-500";
+        // ---------- 把原始 items 整理成「可作答題目」 ----------
+        function finalizeItems(items) {
+            var out = [], ctx = null, secIdx = {};
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                var full = it.fullText;
+                var nf = norm(full);
+                var fo = findOptions(nf, { min: 2 });
+                var hasText = full.trim().length > 0;
+                var hasImg = it.parts.some(function(x) { return x.imgCount > 0; });
+                var stemText = stripLead(fo ? full.slice(0, fo.pos[0]) : full).replace(/\s+/g, ' ').trim();
+                var sub = leadSub(it.rawText);
+                var isSub = sub !== null;
+                var gradable;
+                if (it.sec.type === 'mc' || it.sec.type === 'tf') gradable = hasText || hasImg;
+                else gradable = !!(fo && fo.count >= 2) || !!it.inline;
+
+                if (!gradable) {
+                    if (!isSub && (hasText || hasImg)) ctx = it;
+                    continue;
+                }
+                if (!isSub) ctx = null;
+
+                // 組 html
+                var html = '';
+                it.parts.forEach(function(part, idx) {
+                    var piece = part.imgCount > 0 ? part.html : fmtParaHtml(part.text);
+                    if (idx === 0) piece = piece.replace(/^/, '');
+                    html += (html && !/^<(img|div)/.test(piece) ? '<br>' : '') + piece;
+                });
+                html = html.replace(/(<br>)+(<img )/g, '$2');
+                // 去掉題號、開頭空白括號
+                html = html.replace(/^\s*(?:第\s*\d+\s*題\s*[.:、]?\s*|\d{1,3}\s*[.、:)．）]\s*)/, '')
+                           .replace(/^\s*[(（]\s*[)）]\s*/, '')
+                           .replace(/^(\s*[(（]\s*\d{1,2}\s*[)）])\s*[(（]\s*[)）]\s*/, '$1 ');
+                if (isSub && ctx) {
+                    html = '<div class="ctx">' + ctx.parts.map(function(part) { return part.imgCount > 0 ? part.html : fmtParaHtml(part.text); }).join('<br>').replace(/(<br>)+(<img )/g, '$2').replace(/^\s*[(（]\s*[)）]\s*/, '') + '</div><hr class="ctxline">' + html;
+                }
+                var imgCount = it.parts.reduce(function(a, b) { return a + (b.imgCount || 0); }, 0);
+                var imgFail = it.parts.reduce(function(a, b) { return a + (b.imgFail || 0); }, 0);
+                if (isSub && ctx) {
+                    imgCount += ctx.parts.reduce(function(a, b) { return a + (b.imgCount || 0); }, 0);
+                    imgFail += ctx.parts.reduce(function(a, b) { return a + (b.imgFail || 0); }, 0);
+                }
+                var key = it.sec.ord;
+                secIdx[key] = (secIdx[key] || 0) + 1;
+                var ls = fo && (fo.style === 'p' || fo.style === 'l') ? 'A' : 'c';
+                out.push({
+                    pos: it.pos, secOrd: it.sec.ord, secType: it.sec.type, secTitle: it.sec.title,
+                    ordinal: secIdx[key], num: leadNum(it.rawText), sub: sub,
+                    text: stemText || (hasImg ? '（看圖作答）' : ''), html: html,
+                    imgCount: imgCount, imgFail: imgFail,
+                    nopt: fo ? fo.count : 0, ls: ls, inline: it.inline
+                });
+            }
+            return out;
+        }
+
+        // ---------- 題目與答案配對 ----------
+        function pairAnswers(qs, as, sameDoc, notes) {
+            var map = new Array(qs.length).fill(null), i, j;
+            if (qs.length === as.length) {
+                for (i = 0; i < qs.length; i++) map[i] = as[i];
+                return map;
+            }
+            // 依編號對應（兩邊都有編號時）
+            var qkey = function(q) { return q.num != null ? q.secType + ':' + q.num + ':' + (q.sub || 0) : null; };
+            var akey = function(a) { return a.num != null ? a.secType + ':' + a.num + ':' + (a.sub || 0) : null; };
+            var amap = {}, hit = 0;
+            as.forEach(function(a) { var k = akey(a); if (k) amap[k] = a; });
+            for (i = 0; i < qs.length; i++) { var k2 = qkey(qs[i]); if (k2 && amap[k2]) { map[i] = amap[k2]; hit++; } }
+            if (hit >= qs.length * 0.8) { notes.push('題目與答案數量不同，已依題號對應。'); return map; }
+            map = new Array(qs.length).fill(null);
+            // 同一份檔案：答案出現在題目之後 → 對應到最近、尚未有答案的前一題
+            if (sameDoc) {
+                var used = {};
+                as.forEach(function(a) {
+                    for (j = qs.length - 1; j >= 0; j--) {
+                        if (qs[j].pos < a.pos && !used[j]) { used[j] = true; map[j] = a; return; }
+                    }
+                });
+                var got = map.filter(Boolean).length;
+                if (got > 0) { notes.push('題目與答案數量不同，已依位置對應，請核對預覽表。'); return map; }
+            }
+            var m = Math.min(qs.length, as.length);
+            for (i = 0; i < m; i++) map[i] = as[i];
+            notes.push('⚠️ 題目 ' + qs.length + ' 題、答案 ' + as.length + ' 個，數量不一致，已依順序對應，請務必核對預覽表。');
+            return map;
+        }
+
+        // ---------- 合併多份文件，產生題庫 ----------
+        // docs: [{name, role:'q'|'a'|'paste', paras, parsed}]
+        function buildBank(docs) {
+            var notes = [], qDoc = null, i;
+            var cand = docs.filter(function(d) { return d.parsed; });
+            for (i = 0; i < cand.length; i++) { cand[i].fin = finalizeItems(cand[i].parsed.items); }
+            qDoc = cand.filter(function(d) { return d.role === 'q' && d.fin.length > 0; })[0] ||
+                   cand.filter(function(d) { return d.fin.length > 0; })[0] || null;
+
+            var pool = [];
+            cand.forEach(function(d) { if (d !== qDoc) d.parsed.answers.forEach(function(a) { pool.push(a); }); });
+            var sameDoc = false;
+            if (pool.length === 0 && qDoc) { pool = qDoc.parsed.answers.slice(); sameDoc = true; }
+            pool = pool.map(function(a) { return a; });
+
+            var bank = [];
+            if (qDoc) {
+                var qs = qDoc.fin;
+                var map = pool.length ? pairAnswers(qs, pool, sameDoc, notes) : new Array(qs.length).fill(null);
+                for (i = 0; i < qs.length; i++) {
+                    var q = qs[i], a = map[i];
+                    var ans = a ? a.val : (q.inline || null);
+                    var num = a && a.num != null ? a.num : (q.num != null ? q.num : q.ordinal);
+                    var sub = a && a.sub != null ? a.sub : q.sub;
+                    var secTitle = q.secTitle || (a && a.secTitle) || '';
+                    var type = (ans === 'O' || ans === 'X' || q.secType === 'tf') ? 'tf' : 'mc';
+                    var n = Math.max(q.nopt || 0, (ans && /^\d+$/.test(ans)) ? +ans : 0);
+                    if (!n || n < 2) n = Math.max(4, n);
+                    bank.push({
+                        label: String(num) + (sub ? '(' + sub + ')' : ''), sec: secTitle,
+                        text: q.text, html: q.html, imgCount: q.imgCount, imgFail: q.imgFail,
+                        type: type, n: Math.min(n, 10), ls: q.ls, answer: ans, auto: true
+                    });
+                }
+                if (qDoc.role !== 'q') notes.push('題目文字取自「' + qDoc.name + '」。');
+                if (pool.length === 0 && bank.every(function(b) { return !b.answer; })) notes.push('⚠️ 沒有找到任何答案，請在預覽表中手動選擇答案。');
+            } else {
+                // 只有答案、沒有題目：依答案建立「看紙本作答」題庫
+                if (pool.length === 0) return { bank: [], notes: ['找不到題目，也找不到答案。'] };
+                var maxV = 4;
+                pool.forEach(function(a) { if (/^\d+$/.test(a.val)) maxV = Math.max(maxV, +a.val); });
+                var ord = {};
+                pool.forEach(function(a) {
+                    ord[a.secOrd] = (ord[a.secOrd] || 0) + 1;
+                    var num = a.num != null ? a.num : ord[a.secOrd];
+                    var type = (a.val === 'O' || a.val === 'X') ? 'tf' : 'mc';
+                    var lab = String(num) + (a.sub ? '(' + a.sub + ')' : '');
+                    bank.push({
+                        label: lab, sec: a.secTitle || '', text: '第 ' + lab + ' 題',
+                        html: '<div class="text-center text-gray-600 py-4">📄 請看紙本試卷第 <b class="text-2xl text-blue-700">' + escHtml(lab) + '</b> 題，選出你的答案</div>',
+                        imgCount: 0, imgFail: 0, type: type, n: type === 'tf' ? 2 : Math.min(maxV, 5), ls: 'c', answer: a.val, auto: true, answerOnly: true
+                    });
+                });
+                notes.push('這份資料只有答案、沒有題目文字：學生端會顯示「請看紙本試卷第 N 題」並提供選項按鈕。');
+            }
+            return { bank: bank, notes: notes, qDocName: qDoc ? qDoc.name : null, qRole: qDoc ? qDoc.role : null };
+        }
+
+
+        const STUDENT_TPL = "<!DOCTYPE html>\n<html lang=\"zh-TW\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n    <title>__PAPER_TITLE__ - 錯題重答系統<\/title>\n    <link href=\"https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css\" rel=\"stylesheet\">\n    <style>\n        body { -webkit-tap-highlight-color: transparent; }\n        .hidden-section { display: none; }\n        .q-btn { transition: all 0.1s; touch-action: manipulation; }\n        .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }\n        .btn-option { touch-action: manipulation; }\n        .btn-option:active { transform: scale(0.95); }\n        #quiz-content img { display: block; margin: 12px auto; max-width: 100%; height: auto; }\n        #quiz-content .opts { margin-top: 8px; }\n        #quiz-content .opt { display: inline-block; margin: 4px 22px 4px 0; }\n        #quiz-content .ctx { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; font-size: 0.95em; color: #374151; }\n        #quiz-content .ctxline { margin: 14px 0; border: 0; border-top: 2px dashed #d1d5db; }\n        .grid-head { grid-column: 1 / -1; font-weight: 700; color: #6b21a8; border-bottom: 2px solid #e9d5ff; padding-bottom: 2px; margin-top: 6px; }\n        .grid-head:first-child { margin-top: 0; }\n    <\/style>\n<\/head>\n<body class=\"bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20\">\n    <div class=\"max-w-5xl mx-auto bg-white rounded-xl shadow-lg p-4 md:p-8\">\n        <h1 class=\"text-2xl md:text-3xl font-bold text-center text-green-600 mb-2\">🎓 錯題重答練習系統<\/h1>\n        <h2 class=\"text-xl md:text-2xl font-bold text-center text-blue-800 mb-6 bg-blue-50 py-3 px-4 rounded-xl border border-blue-200\">📄 單元主題：__PAPER_TITLE__<\/h2>\n\n        <div id=\"section-menu\" class=\"mb-8\">\n            <p id=\"total-questions-info\" class=\"mb-6 text-sm md:text-lg font-bold text-gray-700 text-center bg-gray-50 py-2 rounded\">\n                📚 題庫已載入，共 <span id=\"q-count\" class=\"text-blue-600\"><\/span> 題。\n            <\/p>\n\n            <div class=\"bg-purple-50 border-2 border-purple-300 rounded-lg p-4 md:p-6 mb-8 shadow-sm\">\n                <div class=\"flex flex-col\">\n                    <div class=\"flex flex-wrap justify-between items-end mb-4 gap-2\">\n                        <h2 class=\"text-xl md:text-2xl font-bold text-purple-800\">📌 請點選要重做訂正的題號<\/h2>\n                        <div class=\"flex items-center gap-3\">\n                            <span id=\"img-status\" class=\"text-sm font-bold text-purple-600\"><\/span>\n                            <button id=\"select-all-btn\" onclick=\"toggleSelectAll()\" class=\"bg-purple-200 hover:bg-purple-300 text-purple-800 font-bold py-1.5 px-4 rounded-lg shadow-sm transition-colors text-sm md:text-base border border-purple-400\">\n                                全選\n                            <\/button>\n                        <\/div>\n                    <\/div>\n                    <div id=\"q-grid\" class=\"grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3 bg-white p-4 md:p-6 rounded-xl border border-purple-200 h-auto max-h-96 overflow-y-auto shadow-inner\">\n                    <\/div>\n                    <button id=\"batch-start-btn\" onclick=\"startBatchPractice()\" class=\"mt-6 w-full bg-purple-600 text-white font-bold py-3 md:py-4 px-6 rounded-xl hover:bg-purple-700 shadow animate-pulse hidden text-lg\">\n                        🚀 確認無誤，開始重答\n                    <\/button>\n                <\/div>\n            <\/div>\n        <\/div>\n        <div id=\"section-quiz\" class=\"hidden-section bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 md:p-6 mb-8 relative\">\n            <div class=\"flex justify-between items-center mb-4\">\n                <button onclick=\"backToMenu()\" class=\"text-gray-500 hover:text-gray-800 font-bold px-3 py-2 border rounded bg-white shadow-sm text-sm md:text-base\">← 返回主選單<\/button>\n                <span id=\"batch-progress\" class=\"font-bold text-white bg-purple-600 px-3 py-1 rounded-full shadow text-sm\"><\/span>\n            <\/div>\n            <h2 class=\"text-xl md:text-2xl font-bold mb-4 text-yellow-800\" id=\"quiz-title\">第 X 題<\/h2>\n            <div id=\"quiz-content\" class=\"text-lg md:text-xl bg-white p-4 md:p-6 rounded-lg shadow mb-6 leading-relaxed\"><\/div>\n            <div class=\"grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4\" id=\"options-container\"><\/div>\n            <div id=\"feedback\" class=\"mt-4 text-center text-xl md:text-2xl font-bold h-10\"><\/div>\n        <\/div>\n        <div id=\"section-stats\" class=\"overflow-x-auto\">\n            <div class=\"flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3\">\n                <h2 class=\"text-lg md:text-xl font-bold text-gray-800\">📊 錯題答題次數統計<\/h2>\n                <button id=\"retry-wrong-btn\" onclick=\"retryCurrentWrongQuestions()\" class=\"hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-5 rounded-lg shadow transition-all animate-bounce\">\n                    🔥 立即重做下方錯題 (<span id=\"wrong-count-tag\">0<\/span> 題)\n                <\/button>\n            <\/div>\n            <div class=\"bg-white rounded-lg shadow min-w-[300px] border border-gray-200\">\n                <table class=\"min-w-full text-sm md:text-base\">\n                    <thead class=\"bg-gray-100\">\n                        <tr>\n                            <th class=\"py-2 px-3 text-left font-bold w-24 md:w-32\">題號<\/th>\n                            <th class=\"py-2 px-3 text-left font-bold\">題目<\/th>\n                            <th class=\"py-2 px-3 text-center font-bold w-20 md:w-32\">錯誤次數<\/th>\n                        <\/tr>\n                    <\/thead>\n                    <tbody id=\"stats-body\">\n                        <tr><td colspan=\"3\" class=\"py-4 text-center text-gray-500\">目前沒有錯題記錄<\/td><\/tr>\n                    <\/tbody>\n                <\/table>\n            <\/div>\n        <\/div>\n    <\/div>\n    <script>\n        const questionBank = __QUESTION_BANK_JSON__;\n        const CIRC = [\"①\", \"②\", \"③\", \"④\", \"⑤\", \"⑥\", \"⑦\", \"⑧\", \"⑨\", \"⑩\"];\n        const encouragementList = [\n            \"🌟 太厲害了！你憑著堅持不懈的精神，把所有的錯題都徹底搞懂了！\",\n            \"🎉 恭喜你完成挑戰！每一次的更正，都是你大腦在變強壯的證明！\",\n            \"🚀 戰勝錯題就是最好的進步！繼續保持這種不服輸的精神，你超級棒！\",\n            \"💪 失敗是成功之母，而你已經成功把錯誤變成養分了！讚啦！\",\n            \"👑 堅持到底的人才是真正的贏家！你做到了全對，為自己掌聲鼓勵！\",\n            \"🌈 今天的努力不會白費，你看！所有的錯題都被你一一擊破了！\",\n            \"✨ 學習最美的風景，就是看著錯題一題題減少的過程，你真的很讚！\",\n            \"🎯 完美過關！細心加上耐性，讓你成為了這單元的學習小霸王！\",\n            \"🏆 恭喜你！不僅改正了錯題，更展現了永不放棄的學習態度！\",\n            \"💯 太佩服你了！全部題目訂正完畢，給自己一個大大的讚吧！\"\n        ];\n        let wrongStats = {};\n        let lastRoundWrongSet = new Set();\n        let currentQuestion = null;\n        let batchQueue = [];\n        let selectedQuestions = new Set();\n        let isPracticeFinished = false;\n        let gridBtns = {};\n\n        function esc(s) { return String(s).replace(/&/g, \"&amp;\").replace(/<\/g, \"&lt;\").replace(/>/g, \"&gt;\"); }\n        function qName(q) { return (q.sec ? q.sec + \" \" : \"\") + \"第 \" + q.label + \" 題\"; }\n\n        window.onload = function() {\n            document.getElementById(\"q-count\").textContent = questionBank.length;\n            generateGrid();\n        };\n        function generateGrid() {\n            const grid = document.getElementById(\"q-grid\");\n            grid.innerHTML = \"\";\n            gridBtns = {};\n            let lastSec = null;\n            questionBank.forEach(function(q) {\n                if (q.sec !== lastSec) {\n                    lastSec = q.sec;\n                    if (q.sec) {\n                        const head = document.createElement(\"div\");\n                        head.className = \"grid-head\";\n                        head.textContent = q.sec;\n                        grid.appendChild(head);\n                    }\n                }\n                const btn = document.createElement(\"button\");\n                btn.textContent = q.label;\n                btn.className = \"q-btn bg-gray-100 text-gray-700 font-bold text-lg md:text-xl py-3 rounded-lg border border-gray-300 active:bg-gray-300\";\n                btn.onclick = function() { toggleQuestion(q.id, btn); };\n                gridBtns[q.id] = btn;\n                grid.appendChild(btn);\n            });\n        }\n        function toggleQuestion(id, btnElement) {\n            if (selectedQuestions.has(id)) {\n                selectedQuestions.delete(id);\n                btnElement.classList.remove(\"selected\");\n            } else {\n                selectedQuestions.add(id);\n                btnElement.classList.add(\"selected\");\n            }\n            updateStartButton();\n        }\n        function toggleSelectAll() {\n            const isAllSelected = selectedQuestions.size === questionBank.length;\n            questionBank.forEach(function(q) {\n                if (isAllSelected) { selectedQuestions.delete(q.id); gridBtns[q.id].classList.remove(\"selected\"); }\n                else { selectedQuestions.add(q.id); gridBtns[q.id].classList.add(\"selected\"); }\n            });\n            updateStartButton();\n        }\n        function updateStartButton() {\n            const startBtn = document.getElementById(\"batch-start-btn\");\n            const selectAllBtn = document.getElementById(\"select-all-btn\");\n            selectAllBtn.textContent = (selectedQuestions.size === questionBank.length) ? \"取消全選\" : \"全選\";\n            if (selectedQuestions.size > 0) {\n                startBtn.classList.remove(\"hidden\");\n                document.getElementById(\"img-status\").textContent = \"已選 \" + selectedQuestions.size + \" 題\";\n            } else {\n                startBtn.classList.add(\"hidden\");\n                document.getElementById(\"img-status\").textContent = \"\";\n            }\n        }\n        function startBatchPractice() {\n            if (selectedQuestions.size === 0) return;\n            batchQueue = Array.from(selectedQuestions).sort(function(a, b) { return a - b; });\n            resetWrongRecords();\n            document.getElementById(\"batch-progress\").classList.remove(\"hidden\");\n            window.scrollTo({ top: 0, behavior: \"smooth\" });\n            loadQuestion(batchQueue[0]);\n        }\n        function retryCurrentWrongQuestions() {\n            if (lastRoundWrongSet.size === 0) return;\n            batchQueue = Array.from(lastRoundWrongSet).sort(function(a, b) { return a - b; });\n            resetWrongRecords();\n            document.getElementById(\"batch-progress\").classList.remove(\"hidden\");\n            window.scrollTo({ top: 0, behavior: \"smooth\" });\n            loadQuestion(batchQueue[0]);\n        }\n        function resetWrongRecords() {\n            lastRoundWrongSet.clear();\n            wrongStats = {};\n            isPracticeFinished = false;\n            updateStatsTable();\n        }\n        function loadQuestion(qId) {\n            currentQuestion = questionBank[qId - 1];\n            document.getElementById(\"batch-progress\").textContent = \"剩 \" + batchQueue.length + \" 題\";\n            document.getElementById(\"quiz-title\").textContent = qName(currentQuestion);\n            document.getElementById(\"quiz-content\").innerHTML = currentQuestion.html || esc(currentQuestion.text);\n            document.getElementById(\"feedback\").textContent = \"\";\n            document.getElementById(\"feedback\").className = \"mt-4 text-center text-xl md:text-2xl font-bold h-10\";\n            const optionsContainer = document.getElementById(\"options-container\");\n            optionsContainer.innerHTML = \"\";\n            let options = [];\n            if (currentQuestion.type === \"tf\") {\n                options = [{ v: \"O\", t: \"○\" }, { v: \"X\", t: \"╳\" }];\n            } else {\n                for (let i = 1; i <= currentQuestion.n; i++) {\n                    options.push({ v: String(i), t: currentQuestion.ls === \"A\" ? String.fromCharCode(64 + i) : CIRC[i - 1] });\n                }\n            }\n            options.forEach(function(opt) {\n                const btn = document.createElement(\"button\");\n                btn.textContent = opt.t;\n                btn.className = \"btn-option bg-yellow-100 hover:bg-yellow-300 text-yellow-900 text-2xl md:text-3xl font-bold py-4 md:py-6 rounded-xl border-2 border-yellow-400 active:bg-yellow-400 shadow-sm\";\n                btn.onclick = function() { checkAnswer(opt.v); };\n                optionsContainer.appendChild(btn);\n            });\n            document.getElementById(\"section-menu\").classList.add(\"hidden-section\");\n            document.getElementById(\"section-quiz\").classList.remove(\"hidden-section\");\n        }\n        function checkAnswer(selectedVal) {\n            const feedbackBox = document.getElementById(\"feedback\");\n            if (selectedVal === currentQuestion.answer) {\n                feedbackBox.textContent = \"🎉 答對了！\";\n                feedbackBox.className = \"mt-4 text-center text-xl md:text-2xl font-bold h-10 text-green-600\";\n                setTimeout(function() {\n                    batchQueue.shift();\n                    if (batchQueue.length > 0) { loadQuestion(batchQueue[0]); } else { finishPracticeRound(); }\n                }, 1000);\n            } else {\n                feedbackBox.textContent = \"❌ 答錯囉，再試一次！\";\n                feedbackBox.className = \"mt-4 text-center text-xl md:text-2xl font-bold h-10 text-red-500 animate-pulse\";\n                lastRoundWrongSet.add(currentQuestion.id);\n                wrongStats[currentQuestion.id] = (wrongStats[currentQuestion.id] || 0) + 1;\n                updateStatsTable();\n            }\n        }\n        function finishPracticeRound() {\n            isPracticeFinished = true;\n            backToMenu();\n            updateStatsTable();\n            if (lastRoundWrongSet.size === 0) {\n                const randomMsg = encouragementList[Math.floor(Math.random() * encouragementList.length)];\n                alert(\"💯 恭喜獲得 100 分！\\n\\n\" + randomMsg);\n            } else {\n                alert(\"👍 本輪練習結束！下方已為你整理出錯題列表，點擊【重做下方錯題】按鈕即可再次挑戰！\");\n            }\n            selectedQuestions.clear();\n            generateGrid();\n            document.getElementById(\"batch-start-btn\").classList.add(\"hidden\");\n            document.getElementById(\"img-status\").textContent = \"\";\n            updateStartButton();\n        }\n        function backToMenu() {\n            document.getElementById(\"section-quiz\").classList.add(\"hidden-section\");\n            document.getElementById(\"section-menu\").classList.remove(\"hidden-section\");\n            window.scrollTo({ top: 0, behavior: \"smooth\" });\n        }\n        function updateStatsTable() {\n            const tbody = document.getElementById(\"stats-body\");\n            const retryBtn = document.getElementById(\"retry-wrong-btn\");\n            const wrongCountTag = document.getElementById(\"wrong-count-tag\");\n            tbody.innerHTML = \"\";\n            let ids = Object.keys(wrongStats);\n            if (ids.length > 0) {\n                if (isPracticeFinished) { retryBtn.classList.remove(\"hidden\"); wrongCountTag.textContent = ids.length; } else { retryBtn.classList.add(\"hidden\"); }\n                ids.forEach(function(id) {\n                    const q = questionBank[id - 1];\n                    const qText = esc((q.text || \"\").substring(0, 15)) + (q.hasImg ? \" 🖼\" : \"\") + \"...\";\n                    const tr = document.createElement(\"tr\");\n                    tr.className = \"border-b bg-red-50\";\n                    tr.innerHTML = '<td class=\"py-2 px-3 font-bold text-gray-700 text-center\">' + esc((q.sec ? q.sec + \" \" : \"\") + q.label) + '<\/td>' +\n                                   '<td class=\"py-2 px-3 text-gray-800\">' + qText + '<\/td>' +\n                                   '<td class=\"py-2 px-3 text-center font-bold text-red-600\">' + wrongStats[id] + '<\/td>';\n                    tbody.appendChild(tr);\n                });\n            } else {\n                retryBtn.classList.add(\"hidden\");\n                tbody.innerHTML = '<tr><td colspan=\"3\" class=\"py-4 text-center text-gray-500\">目前沒有錯題記錄<\/td><\/tr>';\n            }\n        }\n    <\/script>\n<\/body>\n<\/html>\n";
+
+        // ================= 讀取各種檔案 → 段落陣列 =================
+        function textToParas(text) {
+            return String(text).replace(/\r/g, '').split('\n').map(function(line) {
+                const t = line.replace(/\s+$/, '');
+                return { text: t.trim(), html: escHtml(t.trim()), imgCount: 0, imgFail: 0 };
+            });
+        }
+
+        function htmlToParas(htmlStr) {
+            const d = new DOMParser().parseFromString(htmlStr, 'text/html');
+            d.querySelectorAll('script,style').forEach(function(x) { x.remove(); });
+            d.querySelectorAll('br').forEach(function(b) { b.replaceWith('\n'); });
+            d.querySelectorAll('p,div,li,h1,h2,h3,h4,h5,h6,tr,table,section').forEach(function(b) { b.append('\n'); });
+            d.querySelectorAll('td,th').forEach(function(c) { c.append(' '); });
+            return textToParas(d.body ? d.body.textContent : '');
+        }
+
+        // ================= Excel（.xlsx）/ CSV 答案表 =================
+        // 表頭範例：題號 | 答案 | 解析（解析欄會被忽略；另可有「題型/大題」欄做分段）
+        function colIndex(ref) {
+            const m = /^([A-Z]+)/.exec(ref || ''); let n = 0;
+            if (!m) return 0;
+            for (const ch of m[1]) n = n * 26 + (ch.charCodeAt(0) - 64);
+            return n - 1;
+        }
+
+        function parseCsv(text) {
+            const rows = []; let row = [], cur = '', q = false;
+            text = text.replace(/^\ufeff/, '');
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (q) {
+                    if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c;
+                } else if (c === '"') q = true;
+                else if (c === ',' || c === '\t') { row.push(cur); cur = ''; }
+                else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+                else if (c !== '\r') cur += c;
+            }
+            if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+            return rows;
+        }
+
+        // rows: 二維字串陣列 → 段落陣列
+        function rowsToParas(rows, sheetName) {
+            const lines = [];
+            const clean = function(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); };
+            if (sheetName && headingInfo(sheetName)) lines.push(sheetName);
+            let hi = -1, cNum = 0, cAns = 1, cSec = -1;
+            for (let r = 0; r < Math.min(rows.length, 15); r++) {
+                const cells = (rows[r] || []).map(clean);
+                const a = cells.findIndex(function(x) { return /^(答案|解答|正確答案|參考答案|ans(wer)?)$/i.test(x); });
+                if (a >= 0) {
+                    hi = r; cAns = a;
+                    const n = cells.findIndex(function(x) { return /^(題號|題次|編號|題目編號|no\.?|#)$/i.test(x); });
+                    cNum = n >= 0 ? n : -1;
+                    cSec = cells.findIndex(function(x) { return /^(題型|大題|類型|題組|章節|部分)$/.test(x); });
+                    break;
+                }
+            }
+            let lastSec = null;
+            for (let r = hi + 1; r < rows.length; r++) {
+                const cells = (rows[r] || []).map(clean);
+                let ans = cells[cAns] || '';
+                if (!ans) continue;
+                let num = cNum >= 0 ? (cells[cNum] || '') : '';
+                if (hi < 0 && cNum === 0 && !/^\d/.test(num)) continue;   // 沒表頭時，略過非題號列
+                if (cSec >= 0 && cells[cSec] && cells[cSec] !== lastSec) { lastSec = cells[cSec]; lines.push(lastSec); }
+                if (/^-?\d+(\.0+)?$/.test(ans)) ans = String(parseInt(ans, 10));
+                if (/^\d+(\.0+)?$/.test(num)) num = String(parseInt(num, 10));
+                const sm = /^(\d+)\s*[-_.(（]\s*(\d+)\s*[)）]?$/.exec(norm(num));
+                if (sm) lines.push(sm[1] + '. (' + sm[2] + ')' + ans);
+                else if (num) lines.push(num + '. ' + ans);
+                else lines.push('答案：' + ans);
+            }
+            return textToParas(lines.join('\n'));
+        }
+
+        async function readXlsxParagraphs(file) {
+            const zip = await openZip(await file.arrayBuffer());
+            const dec = new TextDecoder('utf-8');
+            const parse = function(b) { return new DOMParser().parseFromString(dec.decode(b), 'application/xml'); };
+            const shared = [];
+            if (zip.has('xl/sharedStrings.xml')) {
+                const sd = parse(await zip.read('xl/sharedStrings.xml'));
+                for (const si of sd.getElementsByTagName('si')) {
+                    let s = '';
+                    for (const t of si.getElementsByTagName('t')) { if (!t.parentNode || t.parentNode.localName !== 'rPh') s += t.textContent; }
+                    shared.push(s);
+                }
+            }
+            // 依活頁簿順序取得各工作表
+            const wb = parse(await zip.read('xl/workbook.xml'));
+            const relDoc = parse(await zip.read('xl/_rels/workbook.xml.rels'));
+            const relMap = {};
+            for (const r of relDoc.getElementsByTagName('Relationship')) relMap[r.getAttribute('Id')] = r.getAttribute('Target');
+            const sheets = [];
+            for (const s of wb.getElementsByTagName('sheet')) {
+                let t = relMap[s.getAttributeNS(NS_R, 'id')] || relMap[s.getAttribute('r:id')];
+                if (!t) continue;
+                t = t.charAt(0) === '/' ? t.slice(1) : 'xl/' + t;
+                sheets.push({ name: s.getAttribute('name') || '', path: t });
+            }
+            if (!sheets.length) throw new Error('找不到工作表');
+            let paras = [];
+            for (const sh of sheets) {
+                const bytes = await zip.read(sh.path);
+                if (!bytes) continue;
+                const sd = parse(bytes);
+                const rows = [];
+                for (const rowEl of sd.getElementsByTagName('row')) {
+                    const arr = [];
+                    for (const c of rowEl.getElementsByTagName('c')) {
+                        const idx = colIndex(c.getAttribute('r'));
+                        const t = c.getAttribute('t');
+                        let val = '';
+                        if (t === 'inlineStr') { val = Array.from(c.getElementsByTagName('t')).map(function(x) { return x.textContent; }).join(''); }
+                        else {
+                            const v = c.getElementsByTagName('v')[0];
+                            val = v ? v.textContent : '';
+                            if (t === 's') val = shared[parseInt(val, 10)] || '';
+                            else if (t === 'b') val = val === '1' ? 'TRUE' : 'FALSE';
+                        }
+                        arr[idx] = val;
+                    }
+                    const rn = parseInt(rowEl.getAttribute('r'), 10);
+                    if (rn) { while (rows.length < rn - 1) rows.push([]); rows[rn - 1] = arr; } else rows.push(arr);
+                }
+                paras = paras.concat(rowsToParas(rows, sheets.length > 1 ? sh.name : ''));
+            }
+            return paras;
+        }
+
+        async function readAnyFile(file, withImages) {
+            const name = file.name.toLowerCase();
+            const head = new Uint8Array(await file.slice(0, 4).arrayBuffer());
+            const isZip = head[0] === 0x50 && head[1] === 0x4B;
+            if (isZip) {
+                if (/\.xlsx?m?$/.test(name)) return await readXlsxParagraphs(file);
+                const z = await openZip(await file.arrayBuffer());
+                if (z.has('xl/workbook.xml') && !z.has('word/document.xml')) return await readXlsxParagraphs(file);
+                return await readDocxParagraphs(file, withImages);
+            }
+            if (head[0] === 0xD0 && head[1] === 0xCF) throw new Error('這是舊版 Word（.doc）格式，請用 Word 另存新檔成 .docx 再上傳');
+            if (head[0] === 0x25 && head[1] === 0x50) throw new Error('PDF 無法直接解析，請先轉成 .docx 或把答案貼到下方文字框');
+            const buf = await file.arrayBuffer();
+            let text;
+            try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+            catch (e) { try { text = new TextDecoder('big5').decode(buf); } catch (e2) { text = new TextDecoder('utf-8').decode(buf); } }
+            if (/\.html?$/.test(name) || /^\s*<(!doctype|html)/i.test(text)) return htmlToParas(text);
+            if (/\.csv$/.test(name)) { const rp = rowsToParas(parseCsv(text), ''); if (rp.some(function(x) { return x.text; })) return rp; }
+            return textToParas(text);
+        }
+
+        // ================= UI =================
+        const CIRC_CH = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+        let PV = null;   // { bank, title }
+
+        function setStatus(msg, cls) {
+            const s = document.getElementById('status-msg');
+            s.className = 'mt-4 text-center font-bold text-lg ' + cls;
+            s.textContent = msg;
+        }
+
+        function guessTitle(docs, fallback) {
+            for (const d of docs) {
+                const first = (d.paras.find(function(x) { return x.text !== ''; }) || { text: '' }).text;
+                if (first && first.length <= 60 && /(測驗|評量|單元|學年度|考卷|試題|練習卷|學習單)/.test(first) && !headingInfo(first) && !findOptions(norm(first), { min: 2 })) return first;
+            }
+            return fallback;
+        }
+
+        async function analyzeFiles() {
+            const qf = document.getElementById('qFile').files[0];
+            const af = document.getElementById('aFile').files[0];
+            const paste = document.getElementById('pasteBox').value.trim();
+            document.getElementById('preview-area').classList.add('hidden');
+            PV = null;
+            if (!qf && !af && !paste) { setStatus('❌ 請至少上傳一份檔案（題目卷，或題目與解答在一起的檔案）', 'text-red-500'); return; }
+            setStatus('⏳ 解析中，請稍候...', 'text-blue-600');
+            await new Promise(function(r) { setTimeout(r, 30); });
+
+            const docs = [];
+            try {
+                if (qf) docs.push({ name: qf.name, role: 'q', file: qf, paras: await readAnyFile(qf, true) });
+            } catch (e) { console.error(e); setStatus('❌ 無法讀取「' + qf.name + '」：' + (e.message || e), 'text-red-500'); return; }
+            try {
+                if (af) docs.push({ name: af.name, role: 'a', file: af, paras: await readAnyFile(af, false) });
+            } catch (e) { console.error(e); setStatus('❌ 無法讀取「' + af.name + '」：' + (e.message || e), 'text-red-500'); return; }
+            if (paste) docs.push({ name: '貼上的文字', role: 'paste', paras: textToParas(paste) });
+
+            try {
+                docs.forEach(function(d) { d.parsed = parseDoc(d.paras); });
+                let r = buildBank(docs);
+
+                // 題目文字來自第二份檔案時，需要補讀圖片
+                if (r.qRole === 'a') {
+                    const ad = docs.filter(function(d) { return d.role === 'a'; })[0];
+                    ad.paras = await readAnyFile(ad.file, true);
+                    ad.parsed = parseDoc(ad.paras);
+                    r = buildBank(docs);
+                }
+
+                if (!r.bank.length) {
+                    const sample = docs.map(function(d) {
+                        const lines = d.paras.filter(function(x) { return x.text; }).slice(0, 3).map(function(x) { return x.text.slice(0, 30); });
+                        return d.name + '（共 ' + d.paras.filter(function(x) { return x.text; }).length + ' 段文字）前幾行：' + (lines.join(' ／ ') || '（空白）');
+                    }).join('\n');
+                    setStatus('❌ 解析失敗：找不到題目或答案。\n' + sample + '\n請確認檔案內有「選項①②③④」或「答案」，詳見上方「支援哪些格式」。', 'text-red-500');
+                    document.getElementById('status-msg').style.whiteSpace = 'pre-line';
                     return;
                 }
+                document.getElementById('status-msg').style.whiteSpace = '';
 
-                let questionBank = [];
-                const totalCount = Math.min(qItems.length, aLines.length);
-                let imgTotal = 0, imgFailQ = [];
-                for (let i = 0; i < totalCount; i++) {
-                    const ansStr = aLines[i].replace('答案：', '').trim();
-                    const it = qItems[i];
-                    const item = { id: i + 1, text: it.text, answer: ansStr };
-                    if (it.imgCount > 0) { item.html = it.html; item.hasImg = true; imgTotal += it.imgCount; if (it.imgFail > 0) imgFailQ.push(i + 1); }
-                    questionBank.push(item);
-                }
-
-                // 以 replace(字串, 函式) 的方式置入，避免內容中的 $ 符號被誤當成替換語法
-                const json = JSON.stringify(questionBank).replace(/<\//g, '<\\/');
-                let studentHtmlContent = getStudentRawTemplate();
-                studentHtmlContent = studentHtmlContent.replace(/__PAPER_TITLE__/g, function() { return escHtml(paperTitle); });
-                studentHtmlContent = studentHtmlContent.replace('__QUESTION_BANK_JSON__', function() { return json; });
-
-                const blob = new Blob([studentHtmlContent], { type: 'text/html;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                const fileName = `st-${Math.floor(Date.now() / 1000)}.html`;
-                a.download = fileName;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-
-                let msg = `✅ 成功生成並下載：${fileName} (主題：${paperTitle}，共 ${totalCount} 題`;
-                msg += imgTotal > 0 ? `，含 ${imgTotal} 張圖片)` : `)`;
-                let warn = [];
-                if (qItems.length !== aLines.length) warn.push(`⚠️ 題目 ${qItems.length} 題、答案 ${aLines.length} 題，數量不一致，請檢查兩份檔案`);
-                if (imgFailQ.length > 0) warn.push(`⚠️ 第 ${imgFailQ.join('、')} 題的圖片無法轉換，已標註「請對照紙本」。建議在 Word 內將該圖另存/貼成 PNG 後再上傳`);
-                status.innerHTML = escHtml(msg) + warn.map(function(w) { return '<br><span class="text-orange-500">' + escHtml(w) + '</span>'; }).join('');
-                status.className = "mt-4 text-center font-bold text-lg text-green-600";
-
-            } catch (error) {
-                console.error(error);
-                status.textContent = "❌ 解析發生錯誤：" + (error && error.message ? error.message : error);
-                status.className = "mt-4 text-center font-bold text-lg text-red-500";
+                const fallbackTitle = (qf || af || { name: '練習' }).name.replace(/\.[^/.]+$/, '');
+                const title = guessTitle(docs.filter(function(d) { return d.role !== 'paste'; }), fallbackTitle);
+                PV = { bank: r.bank, title: title, notes: r.notes };
+                renderPreview();
+                setStatus('✅ 解析完成，共 ' + r.bank.length + ' 題。請檢查下方預覽後按「產生學生專屬練習網頁」。', 'text-green-600');
+            } catch (err) {
+                console.error(err);
+                setStatus('❌ 解析發生錯誤：' + (err && err.message ? err.message : err), 'text-red-500');
             }
         }
 
-        // 學生端 HTML 原始模板 (安全組裝)
-        function getStudentRawTemplate() {
-            const parts = [
-                '<!DOCTYPE html>',
-                '<html lang="zh-TW">',
-                '<head>',
-                '    <meta charset="UTF-8">',
-                '    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">',
-                '    <title>__PAPER_TITLE__ - 錯題重答系統</title>',
-                '    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">',
-                '    <style>',
-                '        body { -webkit-tap-highlight-color: transparent; }',
-                '        .hidden-section { display: none; }',
-                '        .q-btn { transition: all 0.1s; touch-action: manipulation; }',
-                '        .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }',
-                '        .btn-option { touch-action: manipulation; }',
-                '        .btn-option:active { transform: scale(0.95); }',
-                '        #quiz-content img { display: block; margin: 12px auto; max-width: 100%; height: auto; }',
-                '    </style>',
-                '</head>',
-                '<body class="bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20">',
-                '    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-lg p-4 md:p-8">',
-                '        <h1 class="text-2xl md:text-3xl font-bold text-center text-green-600 mb-2">🎓 錯題重答練習系統</h1>',
-                '        <h2 class="text-xl md:text-2xl font-bold text-center text-blue-800 mb-6 bg-blue-50 py-3 px-4 rounded-xl border border-blue-200">📄 單元主題：__PAPER_TITLE__</h2>',
-                '        ',
-                '        <div id="section-menu" class="mb-8">',
-                '            <p id="total-questions-info" class="mb-6 text-sm md:text-lg font-bold text-gray-700 text-center bg-gray-50 py-2 rounded">',
-                '                📚 題庫已載入，共 <span id="q-count" class="text-blue-600"></span> 題。',
-                '            </p>',
-                '            ',
-                '            <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 md:p-6 mb-8 shadow-sm">',
-                '                <div class="flex flex-col">',
-                '                    <div class="flex flex-wrap justify-between items-end mb-4 gap-2">',
-                '                        <h2 class="text-xl md:text-2xl font-bold text-purple-800">📌 請點選要重做訂正的題號</h2>',
-                '                        <div class="flex items-center gap-3">',
-                '                            <span id="img-status" class="text-sm font-bold text-purple-600"></span>',
-                '                            <button id="select-all-btn" onclick="toggleSelectAll()" class="bg-purple-200 hover:bg-purple-300 text-purple-800 font-bold py-1.5 px-4 rounded-lg shadow-sm transition-colors text-sm md:text-base border border-purple-400">',
-                '                                全選',
-                '                            </button>',
-                '                        </div>',
-                '                    </div>',
-                '                    <div id="q-grid" class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3 bg-white p-4 md:p-6 rounded-xl border border-purple-200 h-auto max-h-80 overflow-y-auto shadow-inner">',
-                '                    </div>',
-                '                    <button id="batch-start-btn" onclick="startBatchPractice()" class="mt-6 w-full bg-purple-600 text-white font-bold py-3 md:py-4 px-6 rounded-xl hover:bg-purple-700 shadow animate-pulse hidden text-lg">',
-                '                        🚀 確認無誤，開始重答',
-                '                    </button>',
-                '                </div>',
-                '            </div>',
-                '        </div>',
-                '        <div id="section-quiz" class="hidden-section bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 md:p-6 mb-8 relative">',
-                '            <div class="flex justify-between items-center mb-4">',
-                '                <button onclick="backToMenu()" class="text-gray-500 hover:text-gray-800 font-bold px-3 py-2 border rounded bg-white shadow-sm text-sm md:text-base">← 返回主選單</button>',
-                '                <span id="batch-progress" class="font-bold text-white bg-purple-600 px-3 py-1 rounded-full shadow text-sm"></span>',
-                '            </div>',
-                '            <h2 class="text-xl md:text-2xl font-bold mb-4 text-yellow-800" id="quiz-title">第 X 題</h2>',
-                '            <div id="quiz-content" class="text-lg md:text-xl bg-white p-4 md:p-6 rounded-lg shadow mb-6 leading-relaxed"></div>',
-                '            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4" id="options-container"></div>',
-                '            <div id="feedback" class="mt-4 text-center text-xl md:text-2xl font-bold h-10"></div>',
-                '        </div>',
-                '        <div id="section-stats" class="overflow-x-auto">',
-                '            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">',
-                '                <h2 class="text-lg md:text-xl font-bold text-gray-800">📊 錯題答題次數統計</h2>',
-                '                <button id="retry-wrong-btn" onclick="retryCurrentWrongQuestions()" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-5 rounded-lg shadow transition-all animate-bounce">',
-                '                    🔥 立即重做下方錯題 (<span id="wrong-count-tag">0</span> 題)',
-                '                </button>',
-                '            </div>',
-                '            <div class="bg-white rounded-lg shadow min-w-[300px] border border-gray-200">',
-                '                <table class="min-w-full text-sm md:text-base">',
-                '                    <thead class="bg-gray-100">',
-                '                        <tr>',
-                '                            <th class="py-2 px-3 text-left font-bold w-16 md:w-24">題號</th>',
-                '                            <th class="py-2 px-3 text-left font-bold">題目</th>',
-                '                            <th class="py-2 px-3 text-center font-bold w-20 md:w-32">錯誤次數</th>',
-                '                        </tr>',
-                '                    </thead>',
-                '                    <tbody id="stats-body">',
-                '                        <tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>',
-                '                    </tbody>',
-                '                </table>',
-                '            </div>',
-                '        </div>',
-                '    </div>',
-                '    <script>',
-                '        const questionBank = __QUESTION_BANK_JSON__;',
-                '        const encouragementList = [',
-                '            "🌟 太厲害了！你憑著堅持不懈的精神，把所有的錯題都徹底搞懂了！",',
-                '            "🎉 恭喜你完成挑戰！每一次的更正，都是你大腦在變強壯的證明！",',
-                '            "🚀 戰勝錯題就是最好的進步！繼續保持這種不服輸的精神，你超級棒！",',
-                '            "💪 失敗是成功之母，而你已經成功把錯誤變成養分了！讚啦！",',
-                '            "👑 堅持到底的人才是真正的贏家！你做到了全對，為自己掌聲鼓勵！",',
-                '            "🌈 今天的努力不會白費，你看！所有的錯題都被你一一擊破了！",',
-                '            "✨ 學習最美的風景，就是看著錯題一題題減少的過程，你真的很讚！",',
-                '            "🎯 完美過關！細心加上耐性，讓你成為了這單元的學習小霸王！",',
-                '            "🏆 恭喜你！不僅改正了錯題，更展現了永不放棄的學習態度！",',
-                '            "💯 太佩服你了！全部題目訂正完畢，給自己一個大大的讚吧！"',
-                '        ];',
-                '        let wrongStats = {};',
-                '        let lastRoundWrongSet = new Set();',
-                '        let currentQuestion = null;',
-                '        let batchQueue = [];',
-                '        let selectedQuestions = new Set();',
-                '        let isPracticeFinished = false;',
-                '        function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }',
-                '        window.onload = function() {',
-                '            document.getElementById("q-count").textContent = questionBank.length;',
-                '            generateGrid();',
-                '        };',
-                '        function generateGrid() {',
-                '            const grid = document.getElementById("q-grid");',
-                '            grid.innerHTML = "";',
-                '            for(let i = 1; i <= questionBank.length; i++) {',
-                '                const btn = document.createElement("button");',
-                '                btn.textContent = i;',
-                '                btn.className = "q-btn bg-gray-100 text-gray-700 font-bold text-lg md:text-xl py-3 rounded-lg border border-gray-300 active:bg-gray-300";',
-                '                btn.onclick = function() { toggleQuestion(i, btn); };',
-                '                grid.appendChild(btn);',
-                '            }',
-                '        }',
-                '        function toggleQuestion(num, btnElement) {',
-                '            if (selectedQuestions.has(num)) {',
-                '                selectedQuestions.delete(num);',
-                '                btnElement.classList.remove("selected");',
-                '            } else {',
-                '                selectedQuestions.add(num);',
-                '                btnElement.classList.add("selected");',
-                '            }',
-                '            updateStartButton();',
-                '        }',
-                '        function toggleSelectAll() {',
-                '            const btns = document.getElementById("q-grid").children;',
-                '            const isAllSelected = selectedQuestions.size === questionBank.length;',
-                '            for(let i = 1; i <= questionBank.length; i++) {',
-                '                const btn = btns[i-1];',
-                '                if (isAllSelected) {',
-                '                    selectedQuestions.delete(i);',
-                '                    btn.classList.remove("selected");',
-                '                } else {',
-                '                    selectedQuestions.add(i);',
-                '                    btn.classList.add("selected");',
-                '                }',
-                '            }',
-                '            updateStartButton();',
-                '        }',
-                '        function updateStartButton() {',
-                '            const startBtn = document.getElementById("batch-start-btn");',
-                '            const selectAllBtn = document.getElementById("select-all-btn");',
-                '            if (selectedQuestions.size === questionBank.length) { selectAllBtn.textContent = "取消全選"; } else { selectAllBtn.textContent = "全選"; }',
-                '            if (selectedQuestions.size > 0) {',
-                '                startBtn.classList.remove("hidden");',
-                '                document.getElementById("img-status").textContent = "已選 " + selectedQuestions.size + " 題";',
-                '            } else {',
-                '                startBtn.classList.add("hidden");',
-                '                document.getElementById("img-status").textContent = "";',
-                '            }',
-                '        }',
-                '        function startBatchPractice() {',
-                '            if (selectedQuestions.size === 0) return;',
-                '            batchQueue = Array.from(selectedQuestions).sort(function(a, b) { return a - b; });',
-                '            resetWrongRecords();',
-                '            document.getElementById("batch-progress").classList.remove("hidden");',
-                '            window.scrollTo({ top: 0, behavior: "smooth" });',
-                '            loadQuestion(batchQueue[0]);',
-                '        }',
-                '        function retryCurrentWrongQuestions() {',
-                '            if (lastRoundWrongSet.size === 0) return;',
-                '            batchQueue = Array.from(lastRoundWrongSet).sort(function(a, b) { return a - b; });',
-                '            resetWrongRecords();',
-                '            document.getElementById("batch-progress").classList.remove("hidden");',
-                '            window.scrollTo({ top: 0, behavior: "smooth" });',
-                '            loadQuestion(batchQueue[0]);',
-                '        }',
-                '        function resetWrongRecords() {',
-                '            lastRoundWrongSet.clear();',
-                '            wrongStats = {};',
-                '            isPracticeFinished = false;',
-                '            updateStatsTable();',
-                '        }',
-                '        function loadQuestion(qId) {',
-                '            currentQuestion = questionBank[qId - 1];',
-                '            document.getElementById("batch-progress").textContent = "剩 " + batchQueue.length + " 題";',
-                '            document.getElementById("quiz-title").textContent = "第 " + currentQuestion.id + " 題";',
-                '            document.getElementById("quiz-content").innerHTML = currentQuestion.html || esc(currentQuestion.text);',
-                '            document.getElementById("feedback").textContent = "";',
-                '            document.getElementById("feedback").className = "mt-4 text-center text-xl md:text-2xl font-bold h-10";',
-                '            const optionsContainer = document.getElementById("options-container");',
-                '            optionsContainer.innerHTML = "";',
-                '            let options = (currentQuestion.answer === "○" || currentQuestion.answer === "╳" || currentQuestion.text.includes("是非題")) ? ["○", "╳"] : ["①", "②", "③", "④"];',
-                '            options.forEach(function(opt) {',
-                '                const btn = document.createElement("button");',
-                '                btn.textContent = opt;',
-                '                btn.className = "btn-option bg-yellow-100 hover:bg-yellow-300 text-yellow-900 text-2xl md:text-3xl font-bold py-4 md:py-6 rounded-xl border-2 border-yellow-400 active:bg-yellow-400 shadow-sm";',
-                '                btn.onclick = function() { checkAnswer(opt); };',
-                '                optionsContainer.appendChild(btn);',
-                '            });',
-                '            document.getElementById("section-menu").classList.add("hidden-section");',
-                '            document.getElementById("section-quiz").classList.remove("hidden-section");',
-                '        }',
-                '        function checkAnswer(selectedOpt) {',
-                '            const feedbackBox = document.getElementById("feedback");',
-                '            if (selectedOpt === currentQuestion.answer) {',
-                '                feedbackBox.textContent = "🎉 答對了！";',
-                '                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-green-600";',
-                '                setTimeout(function() {',
-                '                    batchQueue.shift();',
-                '                    if (batchQueue.length > 0) { loadQuestion(batchQueue[0]); } else { finishPracticeRound(); }',
-                '                }, 1000);',
-                '            } else {',
-                '                feedbackBox.textContent = "❌ 答錯囉，再試一次！";',
-                '                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-red-500 animate-pulse";',
-                '                lastRoundWrongSet.add(currentQuestion.id);',
-                '                wrongStats[currentQuestion.id] = (wrongStats[currentQuestion.id] || 0) + 1;',
-                '                updateStatsTable();',
-                '            }',
-                '        }',
-                '        function finishPracticeRound() {',
-                '            isPracticeFinished = true;',
-                '            backToMenu();',
-                '            updateStatsTable();',
-                '            if (lastRoundWrongSet.size === 0) {',
-                '                const randomMsg = encouragementList[Math.floor(Math.random() * encouragementList.length)];',
-                '                alert("💯 恭喜獲得 100 分！\\n\\n" + randomMsg);',
-                '            } else {',
-                '                alert("👍 本輪練習結束！下方已為你整理出錯題列表，點擊【重做下方錯題】按鈕即可再次挑戰！");',
-                '            }',
-                '            selectedQuestions.clear();',
-                '            generateGrid();',
-                '            document.getElementById("batch-start-btn").classList.add("hidden");',
-                '            document.getElementById("img-status").textContent = "";',
-                '            updateStartButton();',
-                '        }',
-                '        function backToMenu() {',
-                '            document.getElementById("section-quiz").classList.add("hidden-section");',
-                '            document.getElementById("section-menu").classList.remove("hidden-section");',
-                '            window.scrollTo({ top: 0, behavior: "smooth" });',
-                '        }',
-                '        function updateStatsTable() {',
-                '            const tbody = document.getElementById("stats-body");',
-                '            const retryBtn = document.getElementById("retry-wrong-btn");',
-                '            const wrongCountTag = document.getElementById("wrong-count-tag");',
-                '            tbody.innerHTML = "";',
-                '            let wrongCount = Object.keys(wrongStats).length;',
-                '            if (wrongCount > 0) {',
-                '                if (isPracticeFinished) { retryBtn.classList.remove("hidden"); wrongCountTag.textContent = wrongCount; } else { retryBtn.classList.add("hidden"); }',
-                '                Object.keys(wrongStats).forEach(function(id) {',
-                '                    const qText = esc(questionBank[id-1].text.substring(0, 15)) + (questionBank[id-1].hasImg ? " 🖼" : "") + "...";',
-                '                    const tr = document.createElement("tr");',
-                '                    tr.className = "border-b bg-red-50";',
-                '                    tr.innerHTML = \'<td class="py-2 px-3 font-bold text-gray-700 text-center">\' + id + \'</td>\' +',
-                '                                    \'<td class="py-2 px-3 text-gray-800">\' + qText + \'</td>\' +',
-                '                                    \'<td class="py-2 px-3 text-center font-bold text-red-600">\' + wrongStats[id] + \'</td>\';',
-                '                    tbody.appendChild(tr);',
-                '                });',
-                '            } else {',
-                '                retryBtn.classList.add("hidden");',
-                '                tbody.innerHTML = \'<tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>\';',
-                '            }',
-                '        }',
-                '    </' + 'script>',
-                '</body>',
-                '</html>'
-            ];
-            return parts.join('\n');
+        function optLabel(b, i) { return b.ls === 'A' ? String.fromCharCode(64 + i) : CIRC_CH[i - 1]; }
+
+        function renderPreview() {
+            const area = document.getElementById('preview-area');
+            area.classList.remove('hidden');
+            document.getElementById('titleInput').value = PV.title;
+            const notes = document.getElementById('pv-notes');
+            notes.innerHTML = '';
+            PV.notes.forEach(function(n) {
+                const d = document.createElement('div');
+                d.className = /⚠️/.test(n) ? 'text-orange-600' : 'text-gray-600';
+                d.textContent = (/⚠️/.test(n) ? '' : 'ℹ️ ') + n;
+                notes.appendChild(d);
+            });
+            const imgFailQ = PV.bank.filter(function(b) { return b.imgFail > 0; }).map(function(b) { return (b.sec ? b.sec : '') + b.label; });
+            if (imgFailQ.length) {
+                const d = document.createElement('div');
+                d.className = 'text-orange-600';
+                d.textContent = '⚠️ ' + imgFailQ.join('、') + ' 的圖片格式無法轉換（例如 .emf），學生端會標註「請對照紙本」。建議在 Word 內將該圖另存成 PNG 後重新插入。';
+                notes.appendChild(d);
+            }
+            const noAns = PV.bank.filter(function(b) { return !b.answer; }).length;
+            if (noAns) {
+                const d = document.createElement('div');
+                d.className = 'text-red-600';
+                d.textContent = '⚠️ 有 ' + noAns + ' 題找不到答案（紅框），請在下表選擇答案，否則該題不會納入。';
+                notes.appendChild(d);
+            }
+
+            const tbody = document.getElementById('pv-body');
+            tbody.innerHTML = '';
+            let lastSec = null;
+            PV.bank.forEach(function(b, idx) {
+                if (b.include === undefined) b.include = !!b.answer;
+                if (b.sec && b.sec !== lastSec) {
+                    const hr = document.createElement('tr');
+                    const td = document.createElement('td');
+                    td.colSpan = 4; td.className = 'bg-blue-50 text-blue-800 font-bold px-2 py-1';
+                    td.textContent = b.sec;
+                    hr.appendChild(td); tbody.appendChild(hr);
+                }
+                lastSec = b.sec;
+                const tr = document.createElement('tr');
+                tr.className = 'border-t ' + (b.include ? '' : 'pv-row-off') + (b.answer ? '' : ' pv-missing');
+                tr.dataset.idx = idx;
+
+                const c1 = document.createElement('td'); c1.className = 'px-2 py-1 text-center';
+                const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = b.include;
+                cb.onchange = function() { b.include = cb.checked; tr.classList.toggle('pv-row-off', !cb.checked); updatePvCount(); };
+                c1.appendChild(cb);
+
+                const c2 = document.createElement('td'); c2.className = 'px-2 py-1 font-bold text-gray-700'; c2.textContent = b.label;
+
+                const c3 = document.createElement('td'); c3.className = 'px-2 py-1 text-gray-800';
+                c3.textContent = (b.text || '').slice(0, 28) + ((b.text || '').length > 28 ? '…' : '') + (b.imgCount ? ' 🖼' : '') + (b.imgFail ? ' ⚠️' : '');
+
+                const c4 = document.createElement('td'); c4.className = 'px-2 py-1 text-center';
+                const sel = document.createElement('select'); sel.className = 'border border-gray-300 rounded px-1 py-1';
+                const o0 = document.createElement('option'); o0.value = ''; o0.textContent = '？'; sel.appendChild(o0);
+                const maxN = Math.max(b.n, 4);
+                for (let i = 1; i <= maxN; i++) { const o = document.createElement('option'); o.value = String(i); o.textContent = optLabel(b, i); sel.appendChild(o); }
+                [['O', '○'], ['X', '╳']].forEach(function(p) { const o = document.createElement('option'); o.value = p[0]; o.textContent = p[1]; sel.appendChild(o); });
+                sel.value = b.answer || '';
+                sel.onchange = function() {
+                    b.answer = sel.value || null;
+                    b.type = (b.answer === 'O' || b.answer === 'X') ? 'tf' : 'mc';
+                    if (b.type === 'mc' && b.answer && +b.answer > b.n) b.n = +b.answer;
+                    if (b.answer && !b.include) { b.include = true; cb.checked = true; tr.classList.remove('pv-row-off'); }
+                    tr.classList.toggle('pv-missing', !b.answer);
+                    updatePvCount();
+                };
+                c4.appendChild(sel);
+
+                tr.appendChild(c1); tr.appendChild(c2); tr.appendChild(c3); tr.appendChild(c4);
+                tbody.appendChild(tr);
+            });
+            document.getElementById('pv-all').checked = PV.bank.every(function(b) { return b.include; });
+            updatePvCount();
+            area.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function pvToggleAll(on) {
+            PV.bank.forEach(function(b) { b.include = on && !!b.answer; });
+            renderPreview();
+        }
+        function updatePvCount() {
+            const n = PV.bank.filter(function(b) { return b.include && b.answer; }).length;
+            document.getElementById('pv-count').textContent = '將納入 ' + n + ' 題（共解析 ' + PV.bank.length + ' 題）';
+        }
+
+        function generateStudentFile() {
+            const msg = document.getElementById('gen-msg');
+            if (!PV) return;
+            const chosen = PV.bank.filter(function(b) { return b.include && b.answer; });
+            if (!chosen.length) { msg.textContent = '❌ 沒有可納入的題目（每題都需要有答案）'; msg.className = 'mt-4 text-center font-bold text-red-500'; return; }
+            const title = document.getElementById('titleInput').value.trim() || '錯題練習';
+
+            let imgTotal = 0;
+            const questionBank = chosen.map(function(b, i) {
+                const item = { id: i + 1, label: b.label, sec: b.sec || '', text: b.text || '', type: b.type, n: b.n, ls: b.ls, answer: b.answer };
+                if (b.imgCount > 0 || /<(div|span|b)\b/.test(b.html || '')) item.html = b.html;
+                if (b.imgCount > 0) { item.hasImg = true; imgTotal += b.imgCount; }
+                return item;
+            });
+
+            const json = JSON.stringify(questionBank).replace(/<\//g, '<\\/');
+            let html = STUDENT_TPL;
+            html = html.replace(/__PAPER_TITLE__/g, function() { return escHtml(title); });
+            html = html.replace('__QUESTION_BANK_JSON__', function() { return json; });
+
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const fileName = 'st-' + Math.floor(Date.now() / 1000) + '.html';
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            msg.textContent = '✅ 成功生成並下載：' + fileName + '（主題：' + title + '，共 ' + questionBank.length + ' 題' + (imgTotal ? '，含 ' + imgTotal + ' 張圖片' : '') + '）';
+            msg.className = 'mt-4 text-center font-bold text-green-600';
         }
     </script>
 </body>
