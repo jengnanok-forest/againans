@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>115學年度四上-第四單元自然測驗-有趣的電路 - 錯題重答系統</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <style>
+        body { -webkit-tap-highlight-color: transparent; }
+        .hidden-section { display: none; }
+        .q-btn { transition: all 0.1s; touch-action: manipulation; }
+        .q-btn.selected { background-color: #ef4444; color: white; border-color: #dc2626; box-shadow: 0 4px 6px -1px rgba(239, 68, 68, 0.5); transform: scale(1.05); }
+        .btn-option { touch-action: manipulation; }
+        .btn-option:active { transform: scale(0.95); }
+        #quiz-content img { display: block; margin: 12px auto; max-width: 100%; height: auto; }
+        #quiz-content .opts { margin-top: 8px; }
+        #quiz-content .opt { display: inline-block; margin: 4px 22px 4px 0; }
+        #quiz-content .ctx { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; font-size: 0.95em; color: #374151; }
+        #quiz-content .ctxline { margin: 14px 0; border: 0; border-top: 2px dashed #d1d5db; }
+        .grid-head { grid-column: 1 / -1; font-weight: 700; color: #6b21a8; border-bottom: 2px solid #e9d5ff; padding-bottom: 2px; margin-top: 6px; }
+        .grid-head:first-child { margin-top: 0; }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen p-3 md:p-6 pb-20">
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-lg p-4 md:p-8">
+        <h1 class="text-2xl md:text-3xl font-bold text-center text-green-600 mb-2">🎓 錯題重答練習系統</h1>
+        <h2 class="text-xl md:text-2xl font-bold text-center text-blue-800 mb-6 bg-blue-50 py-3 px-4 rounded-xl border border-blue-200">📄 單元主題：115學年度四上-第四單元自然測驗-有趣的電路</h2>
+
+        <div id="section-menu" class="mb-8">
+            <p id="total-questions-info" class="mb-6 text-sm md:text-lg font-bold text-gray-700 text-center bg-gray-50 py-2 rounded">
+                📚 題庫已載入，共 <span id="q-count" class="text-blue-600"></span> 題。
+            </p>
+
+            <div class="bg-purple-50 border-2 border-purple-300 rounded-lg p-4 md:p-6 mb-8 shadow-sm">
+                <div class="flex flex-col">
+                    <div class="flex flex-wrap justify-between items-end mb-4 gap-2">
+                        <h2 class="text-xl md:text-2xl font-bold text-purple-800">📌 請點選要重做訂正的題號</h2>
+                        <div class="flex items-center gap-3">
+                            <span id="img-status" class="text-sm font-bold text-purple-600"></span>
+                            <button id="select-all-btn" onclick="toggleSelectAll()" class="bg-purple-200 hover:bg-purple-300 text-purple-800 font-bold py-1.5 px-4 rounded-lg shadow-sm transition-colors text-sm md:text-base border border-purple-400">
+                                全選
+                            </button>
+                        </div>
+                    </div>
+                    <div id="q-grid" class="grid grid-cols-5 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 gap-2 md:gap-3 bg-white p-4 md:p-6 rounded-xl border border-purple-200 h-auto max-h-96 overflow-y-auto shadow-inner">
+                    </div>
+                    <button id="batch-start-btn" onclick="startBatchPractice()" class="mt-6 w-full bg-purple-600 text-white font-bold py-3 md:py-4 px-6 rounded-xl hover:bg-purple-700 shadow animate-pulse hidden text-lg">
+                        🚀 確認無誤，開始重答
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="section-quiz" class="hidden-section bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 md:p-6 mb-8 relative">
+            <div class="flex justify-between items-center mb-4">
+                <button onclick="backToMenu()" class="text-gray-500 hover:text-gray-800 font-bold px-3 py-2 border rounded bg-white shadow-sm text-sm md:text-base">← 返回主選單</button>
+                <span id="batch-progress" class="font-bold text-white bg-purple-600 px-3 py-1 rounded-full shadow text-sm"></span>
+            </div>
+            <h2 class="text-xl md:text-2xl font-bold mb-4 text-yellow-800" id="quiz-title">第 X 題</h2>
+            <div id="quiz-content" class="text-lg md:text-xl bg-white p-4 md:p-6 rounded-lg shadow mb-6 leading-relaxed"></div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4" id="options-container"></div>
+            <div id="feedback" class="mt-4 text-center text-xl md:text-2xl font-bold h-10"></div>
+        </div>
+        <div id="section-stats" class="overflow-x-auto">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h2 class="text-lg md:text-xl font-bold text-gray-800">📊 錯題答題次數統計</h2>
+                <button id="retry-wrong-btn" onclick="retryCurrentWrongQuestions()" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-5 rounded-lg shadow transition-all animate-bounce">
+                    🔥 立即重做下方錯題 (<span id="wrong-count-tag">0</span> 題)
+                </button>
+            </div>
+            <div class="bg-white rounded-lg shadow min-w-[300px] border border-gray-200">
+                <table class="min-w-full text-sm md:text-base">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="py-2 px-3 text-left font-bold w-24 md:w-32">題號</th>
+                            <th class="py-2 px-3 text-left font-bold">題目</th>
+                            <th class="py-2 px-3 text-center font-bold w-20 md:w-32">錯誤次數</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stats-body">
+                        <tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script>
+        const questionBank = [{"id":1,"label":"1","sec":"選擇題","text":"當電路中的燈泡不亮時，可能是出了什麼問題？","type":"mc","n":4,"ls":"c","answer":"4","html":"當電路中的燈泡不亮時，可能是出了什麼問題？<div class=\"opts\"><span class=\"opt\">①燈泡故障<\/span><span class=\"opt\">②電線損毀<\/span><span class=\"opt\">③電池沒電<\/span><span class=\"opt\">④以上都有可能<\/span><\/div>"},{"id":2,"label":"2","sec":"選擇題","text":"下列哪一項不屬於燈泡的構造？","type":"mc","n":4,"ls":"c","answer":"3","html":"下列哪一項不屬於燈泡的構造？<div class=\"opts\"><span class=\"opt\">①燈絲<\/span><span class=\"opt\">②連接點<\/span><span class=\"opt\">③磁鐵<\/span><span class=\"opt\">④玻璃罩<\/span><\/div>"},{"id":3,"label":"3","sec":"選擇題","text":"切開電線的塑膠外皮可以看到什麼？","type":"mc","n":4,"ls":"c","answer":"4","html":"切開電線的塑膠外皮可以看到什麼？<div class=\"opts\"><span class=\"opt\">①棉花<\/span><span class=\"opt\">②有水流出來<\/span><span class=\"opt\">③紙條<\/span><span class=\"opt\">④銅線<\/span><\/div>"},{"id":4,"label":"4","sec":"選擇題","text":"簡易電路材料包裡面缺少了開關零件，下列哪一種物品不適合作為替代零件？","type":"mc","n":4,"ls":"c","answer":"1","html":"簡易電路材料包裡面缺少了開關零件，下列哪一種物品不適合作為替代零件？<div class=\"opts\"><span class=\"opt\">①絨毛玩偶<\/span><span class=\"opt\">②鐵尺<\/span><span class=\"opt\">③銅片<\/span><span class=\"opt\">④鋁線<\/span><\/div>"},{"id":5,"label":"5","sec":"選擇題","text":"在電路中加入連接物後無法使燈泡發光，表示這個連接物可能是下列哪一項？","type":"mc","n":4,"ls":"c","answer":"2","html":"在電路中加入連接物後無法使燈泡發光，表示這個連接物可能是下列哪一項？<div class=\"opts\"><span class=\"opt\">①銅扣<\/span><span class=\"opt\">②木棒<\/span><span class=\"opt\">③鐵夾子<\/span><span class=\"opt\">④鋁箔紙<\/span><\/div>"},{"id":6,"label":"6","sec":"選擇題","text":"下列哪一種物品屬於容易導電的物體？","type":"mc","n":4,"ls":"c","answer":"4","html":"下列哪一種物品屬於容易導電的物體？<div class=\"opts\"><span class=\"opt\">①塑膠袋<\/span><span class=\"opt\">②雨鞋<\/span><span class=\"opt\">③棉製衣服<\/span><span class=\"opt\">④鋁罐<\/span><\/div>"},{"id":7,"label":"7","sec":"選擇題","text":"家裡的哪些日用品有「開關」的設計？","type":"mc","n":4,"ls":"c","answer":"4","html":"家裡的哪些日用品有「開關」的設計？<div class=\"opts\"><span class=\"opt\">①電視<\/span><span class=\"opt\">②電風扇<\/span><span class=\"opt\">③冷氣<\/span><span class=\"opt\">④以上都有<\/span><\/div>"},{"id":8,"label":"8","sec":"選擇題","text":"甲電路為1個燈泡、串聯2個電池；乙電路為1個燈泡、並聯2個電池。若兩組電路中，皆有一個電池壞掉了，哪一組電路的燈泡仍然會發光？","type":"mc","n":4,"ls":"c","answer":"4","html":"甲電路為1個燈泡、串聯2個電池；乙電路為1個燈泡、並聯2個電池。若兩組電路中，皆有一個電池壞掉了，哪一組電路的燈泡仍然會發光？<div class=\"opts\"><span class=\"opt\">①兩組燈泡皆不會發光<\/span><span class=\"opt\">②兩組燈泡皆會發光<\/span><span class=\"opt\">③甲電路<\/span><span class=\"opt\">④乙電路<\/span><\/div>"},{"id":9,"label":"9","sec":"選擇題","text":"手電筒中的電池大多是以哪一種方式連接？","type":"mc","n":4,"ls":"c","answer":"1","html":"手電筒中的電池大多是以哪一種方式連接？<div class=\"opts\"><span class=\"opt\">①電池串聯<\/span><span class=\"opt\">②電池並聯<\/span><span class=\"opt\">③電池通聯<\/span><span class=\"opt\">④電池相聯<\/span><\/div>"},{"id":10,"label":"10","sec":"選擇題","text":"用電線將每個電池的正極連正極、負極連負極後，再相連燈泡的接法稱為什麼？","type":"mc","n":4,"ls":"c","answer":"2","html":"用電線將每個電池的正極連正極、負極連負極後，再相連燈泡的接法稱為什麼？<div class=\"opts\"><span class=\"opt\">①電池串聯<\/span><span class=\"opt\">②電池並聯<\/span><span class=\"opt\">③燈泡串聯<\/span><span class=\"opt\">④燈泡並聯<\/span><\/div>"},{"id":11,"label":"11","sec":"選擇題","text":"某些遙控器放置電池的部位，會利用金屬片將電池的負極連接另一個電池的正極，這是電路中哪一種連接方式的應用？","type":"mc","n":4,"ls":"c","answer":"2","html":"某些遙控器放置電池的部位，會利用金屬片將電池的負極連接另一個電池的正極，這是電路中哪一種連接方式的應用？<div class=\"opts\"><span class=\"opt\">①電池直聯<\/span><span class=\"opt\">②電池串聯<\/span><span class=\"opt\">③電池亂聯<\/span><span class=\"opt\">④燈泡串聯<\/span><\/div>"},{"id":12,"label":"12","sec":"選擇題","text":"教室裡的日光燈管壞了一個，其他的還是會發光，表示日光燈管是利用下列哪一種方法連接的？","type":"mc","n":4,"ls":"c","answer":"1","html":"教室裡的日光燈管壞了一個，其他的還是會發光，表示日光燈管是利用下列哪一種方法連接的？<div class=\"opts\"><span class=\"opt\">①並聯<\/span><span class=\"opt\">②串聯<\/span><span class=\"opt\">③通聯<\/span><span class=\"opt\">④亂聯<\/span><\/div>"},{"id":13,"label":"13","sec":"選擇題","text":"電器長時間不用時，為什麼要將電池拿出來？","type":"mc","n":4,"ls":"c","answer":"3","html":"電器長時間不用時，為什麼要將電池拿出來？<div class=\"opts\"><span class=\"opt\">①減輕電器的重量<\/span><span class=\"opt\">②避免電池消失<\/span><span class=\"opt\">③避免電池內部的化學物質滲出破壞電器<\/span><span class=\"opt\">④避免吸引小蟲<\/span><\/div>"},{"id":14,"label":"14","sec":"選擇題","text":"廢電池通常不能拿到下列哪個地方回收？","type":"mc","n":4,"ls":"c","answer":"4","html":"廢電池通常不能拿到下列哪個地方回收？<div class=\"opts\"><span class=\"opt\">①學校<\/span><span class=\"opt\">②超市<\/span><span class=\"opt\">③便利超商<\/span><span class=\"opt\">④傳統市場<\/span><\/div>"},{"id":15,"label":"15","sec":"選擇題","text":"充電電池可重複利用，環保又方便，下列哪一種電池的電量耗盡後可再充電？","type":"mc","n":4,"ls":"c","answer":"4","html":"充電電池可重複利用，環保又方便，下列哪一種電池的電量耗盡後可再充電？<div class=\"opts\"><span class=\"opt\">①碳鋅電池<\/span><span class=\"opt\">②水銀電池<\/span><span class=\"opt\">③鹼性電池<\/span><span class=\"opt\">④鋰電池<\/span><\/div>"},{"id":16,"label":"16","sec":"選擇題","text":"關於電池的注意事項，下列何者有誤？","type":"mc","n":4,"ls":"c","answer":"4","html":"關於電池的注意事項，下列何者有誤？<div class=\"opts\"><span class=\"opt\">①購買電池前要先認標誌<\/span><span class=\"opt\">②要將電池剩餘的電量用完<\/span><span class=\"opt\">③沒有電的廢電池要回收<\/span><span class=\"opt\">④能跟生活垃圾一起掩埋在土裡<\/span><\/div>"},{"id":17,"label":"17","sec":"選擇題","text":"電線的表面有一層塑膠外皮，它的主要的作用是什麼？","type":"mc","n":4,"ls":"c","answer":"3","html":"電線的表面有一層塑膠外皮，它的主要的作用是什麼？<div class=\"opts\"><span class=\"opt\">①美觀<\/span><span class=\"opt\">②增加重量<\/span><span class=\"opt\">③避免觸電<\/span><span class=\"opt\">④增加體積<\/span><\/div>"},{"id":18,"label":"18","sec":"選擇題","text":"下列哪一種物品不需要用「電」來當作動力來源？","type":"mc","n":4,"ls":"c","answer":"3","html":"下列哪一種物品不需要用「電」來當作動力來源？<div class=\"opts\"><span class=\"opt\">①冷氣機<\/span><span class=\"opt\">②冰箱<\/span><span class=\"opt\">③剪刀<\/span><span class=\"opt\">④電鍋<\/span><\/div>"},{"id":19,"label":"19","sec":"選擇題","text":"LED、電池和電線連接後，如果LED會發亮，表示這個電路形成什麼？","type":"mc","n":4,"ls":"c","answer":"1","html":"LED、電池和電線連接後，如果LED會發亮，表示這個電路形成什麼？<div class=\"opts\"><span class=\"opt\">①通路<\/span><span class=\"opt\">②斷路<\/span><span class=\"opt\">③長路<\/span><span class=\"opt\">④短路<\/span><\/div>"},{"id":20,"label":"20","sec":"選擇題","text":"下列哪一項物品的電力來源不是電力公司？","type":"mc","n":4,"ls":"c","answer":"2","html":"下列哪一項物品的電力來源不是電力公司？<div class=\"opts\"><span class=\"opt\">①冰箱<\/span><span class=\"opt\">②鬧鐘<\/span><span class=\"opt\">③微波爐<\/span><span class=\"opt\">④電視機<\/span><\/div>"},{"id":21,"label":"1","sec":"是非題","text":"目前大部分的燈具仍然是使用傳統的鎢絲燈泡。","type":"tf","n":4,"ls":"c","answer":"X"},{"id":22,"label":"2","sec":"是非題","text":"燈泡、電線與電池形成通路，如果將電池正負極互換，燈泡就不會發光了。","type":"tf","n":4,"ls":"c","answer":"X"},{"id":23,"label":"3","sec":"是非題","text":"一般來說，電池的正極要連接電池座內有金屬接點的那端。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":24,"label":"4","sec":"是非題","text":"磁鐵無法吸起十元硬幣，因此十元硬幣不是金屬製品，屬於不容易導電的物體。","type":"tf","n":4,"ls":"c","answer":"X"},{"id":25,"label":"5","sec":"是非題","text":"進行實驗時，我們可以用電線分別將燈泡的螺紋狀金屬體和底部的連接點與燈泡座兩端的孔洞相接。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":26,"label":"6","sec":"是非題","text":"木材、塑膠類製品屬於不容易導電的物體。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":27,"label":"7","sec":"是非題","text":"「導電」是指物體能讓電流通過或傳導的性質","type":"tf","n":4,"ls":"c","answer":"O"},{"id":28,"label":"8","sec":"是非題","text":"小華將原已組裝好的電池並聯電路改裝成電池串聯電路後，可以使燈泡發出比較亮的亮度。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":29,"label":"9","sec":"是非題","text":"在電路是通路的情況下，將電池的正極與另一個電池的負極連接在一起，再接到燈泡上，這種接法稱為「電池並聯」。","type":"tf","n":4,"ls":"c","answer":"X"},{"id":30,"label":"10","sec":"是非題","text":"在燈泡並聯的通路中，如果將其中一個燈泡拿掉，其他燈泡還是會發光。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":31,"label":"11","sec":"是非題","text":"在燈泡串聯的電路中，如果其中一個壞了，其他燈泡就無法形成通路，因此也不會發光。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":32,"label":"12","sec":"是非題","text":"要使發光二極體發光，必須將發光二極體的長腳連接電池負極，發光二極體的短腳連接電池正極。","type":"tf","n":4,"ls":"c","answer":"X"},{"id":33,"label":"13","sec":"是非題","text":"當我們要更換手電筒內的電池時，將電池裝入電器前，要注意放置的方向。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":34,"label":"14","sec":"是非題","text":"拔插頭時，不可以只拉電線的部分，以免電線內部的銅線斷裂。","type":"tf","n":4,"ls":"c","answer":"O"},{"id":35,"label":"15","sec":"是非題","text":"使用延長線時，不能同時將許多插頭插在同一個延長線上，以免超過延長線的電流量負載。","type":"tf","n":4,"ls":"c","answer":"O"}];
+        const CIRC = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+        const encouragementList = [
+            "🌟 太厲害了！你憑著堅持不懈的精神，把所有的錯題都徹底搞懂了！",
+            "🎉 恭喜你完成挑戰！每一次的更正，都是你大腦在變強壯的證明！",
+            "🚀 戰勝錯題就是最好的進步！繼續保持這種不服輸的精神，你超級棒！",
+            "💪 失敗是成功之母，而你已經成功把錯誤變成養分了！讚啦！",
+            "👑 堅持到底的人才是真正的贏家！你做到了全對，為自己掌聲鼓勵！",
+            "🌈 今天的努力不會白費，你看！所有的錯題都被你一一擊破了！",
+            "✨ 學習最美的風景，就是看著錯題一題題減少的過程，你真的很讚！",
+            "🎯 完美過關！細心加上耐性，讓你成為了這單元的學習小霸王！",
+            "🏆 恭喜你！不僅改正了錯題，更展現了永不放棄的學習態度！",
+            "💯 太佩服你了！全部題目訂正完畢，給自己一個大大的讚吧！"
+        ];
+        let wrongStats = {};
+        let lastRoundWrongSet = new Set();
+        let currentQuestion = null;
+        let batchQueue = [];
+        let selectedQuestions = new Set();
+        let isPracticeFinished = false;
+        let gridBtns = {};
+
+        function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+        function qName(q) { return (q.sec ? q.sec + " " : "") + "第 " + q.label + " 題"; }
+
+        window.onload = function() {
+            document.getElementById("q-count").textContent = questionBank.length;
+            generateGrid();
+        };
+        function generateGrid() {
+            const grid = document.getElementById("q-grid");
+            grid.innerHTML = "";
+            gridBtns = {};
+            let lastSec = null;
+            questionBank.forEach(function(q) {
+                if (q.sec !== lastSec) {
+                    lastSec = q.sec;
+                    if (q.sec) {
+                        const head = document.createElement("div");
+                        head.className = "grid-head";
+                        head.textContent = q.sec;
+                        grid.appendChild(head);
+                    }
+                }
+                const btn = document.createElement("button");
+                btn.textContent = q.label;
+                btn.className = "q-btn bg-gray-100 text-gray-700 font-bold text-lg md:text-xl py-3 rounded-lg border border-gray-300 active:bg-gray-300";
+                btn.onclick = function() { toggleQuestion(q.id, btn); };
+                gridBtns[q.id] = btn;
+                grid.appendChild(btn);
+            });
+        }
+        function toggleQuestion(id, btnElement) {
+            if (selectedQuestions.has(id)) {
+                selectedQuestions.delete(id);
+                btnElement.classList.remove("selected");
+            } else {
+                selectedQuestions.add(id);
+                btnElement.classList.add("selected");
+            }
+            updateStartButton();
+        }
+        function toggleSelectAll() {
+            const isAllSelected = selectedQuestions.size === questionBank.length;
+            questionBank.forEach(function(q) {
+                if (isAllSelected) { selectedQuestions.delete(q.id); gridBtns[q.id].classList.remove("selected"); }
+                else { selectedQuestions.add(q.id); gridBtns[q.id].classList.add("selected"); }
+            });
+            updateStartButton();
+        }
+        function updateStartButton() {
+            const startBtn = document.getElementById("batch-start-btn");
+            const selectAllBtn = document.getElementById("select-all-btn");
+            selectAllBtn.textContent = (selectedQuestions.size === questionBank.length) ? "取消全選" : "全選";
+            if (selectedQuestions.size > 0) {
+                startBtn.classList.remove("hidden");
+                document.getElementById("img-status").textContent = "已選 " + selectedQuestions.size + " 題";
+            } else {
+                startBtn.classList.add("hidden");
+                document.getElementById("img-status").textContent = "";
+            }
+        }
+        function startBatchPractice() {
+            if (selectedQuestions.size === 0) return;
+            batchQueue = Array.from(selectedQuestions).sort(function(a, b) { return a - b; });
+            resetWrongRecords();
+            document.getElementById("batch-progress").classList.remove("hidden");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            loadQuestion(batchQueue[0]);
+        }
+        function retryCurrentWrongQuestions() {
+            if (lastRoundWrongSet.size === 0) return;
+            batchQueue = Array.from(lastRoundWrongSet).sort(function(a, b) { return a - b; });
+            resetWrongRecords();
+            document.getElementById("batch-progress").classList.remove("hidden");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            loadQuestion(batchQueue[0]);
+        }
+        function resetWrongRecords() {
+            lastRoundWrongSet.clear();
+            wrongStats = {};
+            isPracticeFinished = false;
+            updateStatsTable();
+        }
+        function loadQuestion(qId) {
+            currentQuestion = questionBank[qId - 1];
+            document.getElementById("batch-progress").textContent = "剩 " + batchQueue.length + " 題";
+            document.getElementById("quiz-title").textContent = qName(currentQuestion);
+            document.getElementById("quiz-content").innerHTML = currentQuestion.html || esc(currentQuestion.text);
+            document.getElementById("feedback").textContent = "";
+            document.getElementById("feedback").className = "mt-4 text-center text-xl md:text-2xl font-bold h-10";
+            const optionsContainer = document.getElementById("options-container");
+            optionsContainer.innerHTML = "";
+            let options = [];
+            if (currentQuestion.type === "tf") {
+                options = [{ v: "O", t: "○" }, { v: "X", t: "╳" }];
+            } else {
+                for (let i = 1; i <= currentQuestion.n; i++) {
+                    options.push({ v: String(i), t: currentQuestion.ls === "A" ? String.fromCharCode(64 + i) : CIRC[i - 1] });
+                }
+            }
+            options.forEach(function(opt) {
+                const btn = document.createElement("button");
+                btn.textContent = opt.t;
+                btn.className = "btn-option bg-yellow-100 hover:bg-yellow-300 text-yellow-900 text-2xl md:text-3xl font-bold py-4 md:py-6 rounded-xl border-2 border-yellow-400 active:bg-yellow-400 shadow-sm";
+                btn.onclick = function() { checkAnswer(opt.v); };
+                optionsContainer.appendChild(btn);
+            });
+            document.getElementById("section-menu").classList.add("hidden-section");
+            document.getElementById("section-quiz").classList.remove("hidden-section");
+        }
+        function checkAnswer(selectedVal) {
+            const feedbackBox = document.getElementById("feedback");
+            if (selectedVal === currentQuestion.answer) {
+                feedbackBox.textContent = "🎉 答對了！";
+                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-green-600";
+                setTimeout(function() {
+                    batchQueue.shift();
+                    if (batchQueue.length > 0) { loadQuestion(batchQueue[0]); } else { finishPracticeRound(); }
+                }, 1000);
+            } else {
+                feedbackBox.textContent = "❌ 答錯囉，再試一次！";
+                feedbackBox.className = "mt-4 text-center text-xl md:text-2xl font-bold h-10 text-red-500 animate-pulse";
+                lastRoundWrongSet.add(currentQuestion.id);
+                wrongStats[currentQuestion.id] = (wrongStats[currentQuestion.id] || 0) + 1;
+                updateStatsTable();
+            }
+        }
+        function finishPracticeRound() {
+            isPracticeFinished = true;
+            backToMenu();
+            updateStatsTable();
+            if (lastRoundWrongSet.size === 0) {
+                const randomMsg = encouragementList[Math.floor(Math.random() * encouragementList.length)];
+                alert("💯 恭喜獲得 100 分！\n\n" + randomMsg);
+            } else {
+                alert("👍 本輪練習結束！下方已為你整理出錯題列表，點擊【重做下方錯題】按鈕即可再次挑戰！");
+            }
+            selectedQuestions.clear();
+            generateGrid();
+            document.getElementById("batch-start-btn").classList.add("hidden");
+            document.getElementById("img-status").textContent = "";
+            updateStartButton();
+        }
+        function backToMenu() {
+            document.getElementById("section-quiz").classList.add("hidden-section");
+            document.getElementById("section-menu").classList.remove("hidden-section");
+            window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        function updateStatsTable() {
+            const tbody = document.getElementById("stats-body");
+            const retryBtn = document.getElementById("retry-wrong-btn");
+            const wrongCountTag = document.getElementById("wrong-count-tag");
+            tbody.innerHTML = "";
+            let ids = Object.keys(wrongStats);
+            if (ids.length > 0) {
+                if (isPracticeFinished) { retryBtn.classList.remove("hidden"); wrongCountTag.textContent = ids.length; } else { retryBtn.classList.add("hidden"); }
+                ids.forEach(function(id) {
+                    const q = questionBank[id - 1];
+                    const qText = esc((q.text || "").substring(0, 15)) + (q.hasImg ? " 🖼" : "") + "...";
+                    const tr = document.createElement("tr");
+                    tr.className = "border-b bg-red-50";
+                    tr.innerHTML = '<td class="py-2 px-3 font-bold text-gray-700 text-center">' + esc((q.sec ? q.sec + " " : "") + q.label) + '</td>' +
+                                   '<td class="py-2 px-3 text-gray-800">' + qText + '</td>' +
+                                   '<td class="py-2 px-3 text-center font-bold text-red-600">' + wrongStats[id] + '</td>';
+                    tbody.appendChild(tr);
+                });
+            } else {
+                retryBtn.classList.add("hidden");
+                tbody.innerHTML = '<tr><td colspan="3" class="py-4 text-center text-gray-500">目前沒有錯題記錄</td></tr>';
+            }
+        }
+    </script>
+</body>
+</html>
