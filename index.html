@@ -152,17 +152,37 @@
         // 取出一個段落內依序出現的 文字 / 換行 / 圖片
         function collectParts(p) {
             const parts = [];
+            let fld = null;   // 目前正在收集的欄位代碼（Word 的 EQ 欄位常用來做「圈號數字」）
+            const fldToText = function(code) {
+                // eq \o(○,２) → ②；也容許 \o\ac(○,2)、\o\al(○,2) 之類的開關
+                const m = /eq\s*\\o(?:\\[a-z]+(?:\([^)]*\))?)*\s*\(\s*([^,()]*?)\s*,\s*([^()]*?)\s*\)/i.exec(code);
+                if (!m) return '';
+                const half = m[2].replace(/[\uFF10-\uFF19]/g, function(ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0); }).trim();
+                if (/^\d{1,2}$/.test(half)) {
+                    const n = parseInt(half, 10);
+                    if (n >= 1 && n <= 20) return String.fromCharCode(0x2460 + n - 1);
+                    return half;
+                }
+                return /^[A-Za-z]$/.test(half) ? half : '';
+            };
             (function walk(node) {
                 for (const c of node.childNodes) {
                     if (c.nodeType !== 1) continue;
                     switch (c.localName) {
+                        case 'fldChar': {
+                            const ft = c.getAttributeNS(NS_W, 'fldCharType');
+                            if (ft === 'begin') fld = '';
+                            else if (ft === 'end' && fld !== null) { const tx = fldToText(fld); if (tx) parts.push({k: 't', v: tx}); fld = null; }
+                            break;
+                        }
+                        case 'instrText': if (fld !== null) fld += c.textContent; break;
                         case 't': parts.push({k: 't', v: c.textContent}); break;
                         case 'tab': parts.push({k: 't', v: ' '}); break;
                         case 'noBreakHyphen': parts.push({k: 't', v: '-'}); break;
                         case 'br': case 'cr':
                             if (c.getAttributeNS(NS_W, 'type') !== 'page') parts.push({k: 'br'});
                             break;
-                        case 'p': case 'Fallback': case 'instrText': case 'delText': break;
+                        case 'p': case 'Fallback': case 'delText': break;
                         case 'imagedata': { // 舊式 VML 圖片 / 內嵌 OLE 物件的預覽圖（本題本的情況）
                             const rid = c.getAttributeNS(NS_R, 'id');
                             const size = c.parentNode && c.parentNode.getAttribute ? parseSizePx(c.parentNode.getAttribute('style')) : null;
@@ -201,8 +221,19 @@
                     const mime = {png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', svg: 'image/svg+xml'}[ext];
                     if (bytes && mime) {
                         result = { src: 'data:' + mime + ';base64,' + bytesToBase64(bytes), w: size ? size.w : 0, h: size ? size.h : 0 };
-                    } else if (bytes && ext === 'wmf') {
-                        result = await wmfToPng(bytes, size ? size.w : 0);
+                    } else if (bytes) {
+                        let data = bytes, kind = ext;
+                        if (ext === 'emz' || ext === 'wmz') {   // gzip 壓縮的圖元檔
+                            data = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+                            kind = ext === 'emz' ? 'emf' : 'wmf';
+                        }
+                        const dv0 = new DataView(data.buffer, data.byteOffset, data.byteLength);
+                        if (kind !== 'emf' && kind !== 'wmf' && data.length > 44) {   // 副檔名不明時用檔頭判斷
+                            if (dv0.getUint32(0, true) === 1 && dv0.getUint32(40, true) === 0x464D4520) kind = 'emf';
+                            else if (dv0.getUint32(0, true) === 0x9AC6CDD7) kind = 'wmf';
+                        }
+                        if (kind === 'emf') result = await emfToPng(data, size ? size.w : 0);
+                        else if (kind === 'wmf') result = await wmfToPng(data, size ? size.w : 0);
                     }
                 }
             } catch (err) {
@@ -479,6 +510,328 @@
 
 
 
+        // ================= EMF（增強型圖元檔）轉 PNG =================
+        // 瀏覽器無法直接顯示 .emf，這裡把常見的 GDI 繪圖指令（線、多邊形、曲線、路徑、文字、點陣圖）重畫到 canvas。
+        async function emfToPng(u8, cssW) {
+            const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+            if (u8.length < 88 || dv.getUint32(0, true) !== 1 || dv.getUint32(40, true) !== 0x464D4520) return null;
+            const i32 = function(o) { return dv.getInt32(o, true); };
+            const u32 = function(o) { return dv.getUint32(o, true); };
+            const f32 = function(o) { return dv.getFloat32(o, true); };
+            const u16 = function(o) { return dv.getUint16(o, true); };
+            const i16 = function(o) { return dv.getInt16(o, true); };
+
+            const devX = i32(72) || 1024, devY = i32(76) || 768, mmX = i32(80) || 320, mmY = i32(84) || 240;
+            const pxPerMmX = devX / mmX, pxPerMmY = devY / mmY;
+
+            // 顯示範圍（裝置座標）：優先用 frame（0.01mm），沒有再用 bounds
+            let vl = i32(24) * pxPerMmX / 100, vt = i32(28) * pxPerMmY / 100;
+            let vr = i32(32) * pxPerMmX / 100, vb = i32(36) * pxPerMmY / 100;
+            if (!(vr - vl > 0 && vb - vt > 0)) { vl = i32(8); vt = i32(12); vr = i32(16) + 1; vb = i32(20) + 1; }
+            if (!(vr - vl > 0 && vb - vt > 0)) return null;
+            const aspect = (vr - vl) / (vb - vt);
+            const shownW = cssW > 0 ? cssW : Math.min(600, Math.max(60, vr - vl));
+            const cw = Math.max(8, Math.min(1600, Math.round(shownW * 2))), ch = Math.max(8, Math.round(cw / aspect));
+            if (ch > 4000) return null;
+            const canvas = document.createElement('canvas');
+            canvas.width = cw; canvas.height = ch;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cw, ch);
+
+            // 仿射矩陣 {a,b,c,d,e,f}；mul(A,B) = 先套用 A 再套用 B
+            const mul = function(A, B) {
+                return { a: A.a * B.a + A.b * B.c, b: A.a * B.b + A.b * B.d, c: A.c * B.a + A.d * B.c, d: A.c * B.b + A.d * B.d,
+                         e: A.e * B.a + A.f * B.c + B.e, f: A.e * B.b + A.f * B.d + B.f };
+            };
+            const IDENT = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+            const sx0 = cw / (vr - vl), sy0 = ch / (vb - vt);
+            const BASE = { a: sx0, b: 0, c: 0, d: sy0, e: -vl * sx0, f: -vt * sy0 };
+
+            // 繪圖狀態
+            let S = {
+                mapMode: 1, wOrg: { x: 0, y: 0 }, wExt: { x: 1, y: 1 }, vOrg: { x: 0, y: 0 }, vExt: { x: 1, y: 1 },
+                world: IDENT, pen: { style: 0, w: 0, color: '#000' }, brush: { style: 0, color: '#fff' }, font: null,
+                textColor: '#000', bkColor: '#fff', bkMode: 2, textAlign: 0, fillMode: 1, cur: { x: 0, y: 0 }
+            };
+            const stack = [];
+            let total = BASE, curScale = Math.sqrt(Math.abs(sx0 * sy0)), flip = false;
+
+            const mapMatrix = function() {
+                const m = S.mapMode;
+                if (m === 7 || m === 8) {
+                    const ax = S.wExt.x ? S.vExt.x / S.wExt.x : 1, ay = S.wExt.y ? S.vExt.y / S.wExt.y : 1;
+                    return { a: ax, b: 0, c: 0, d: ay, e: S.vOrg.x - S.wOrg.x * ax, f: S.vOrg.y - S.wOrg.y * ay };
+                }
+                const unitMm = { 2: 0.1, 3: 0.01, 4: 0.254, 5: 0.0254, 6: 25.4 / 1440 }[m];
+                if (!unitMm) return { a: 1, b: 0, c: 0, d: 1, e: S.vOrg.x - S.wOrg.x, f: S.vOrg.y - S.wOrg.y };
+                const ax = unitMm * pxPerMmX, ay = -unitMm * pxPerMmY;
+                return { a: ax, b: 0, c: 0, d: ay, e: S.vOrg.x - S.wOrg.x * ax, f: S.vOrg.y - S.wOrg.y * ay };
+            };
+            const applyT = function() {
+                const dev = mul(S.world, mapMatrix());
+                total = mul(dev, BASE);
+                ctx.setTransform(total.a, total.b, total.c, total.d, total.e, total.f);
+                curScale = Math.sqrt(Math.abs(total.a * total.d - total.b * total.c)) || 1;
+                flip = (dev.a * dev.d - dev.b * dev.c) < 0;
+            };
+            applyT();
+
+            const color = function(o) { return 'rgb(' + u8[o] + ',' + u8[o + 1] + ',' + u8[o + 2] + ')'; };
+            const objs = {};
+            const STOCK_BRUSH = { 0: '#fff', 1: '#c0c0c0', 2: '#808080', 3: '#404040', 4: '#000' };
+            const DASH = { 1: [6, 2], 2: [1, 2], 3: [6, 2, 1, 2], 4: [6, 2, 1, 2, 1, 2] };
+            let drawn = 0, inPath = false;
+
+            const penWidth = function() { return Math.max(S.pen.w, 1 / curScale); };
+            const paint = function(fill, stroke) {
+                if (fill && S.brush.style === 0) { ctx.fillStyle = S.brush.color; ctx.fill(S.fillMode === 2 ? 'nonzero' : 'evenodd'); }
+                if (stroke && S.pen.style !== 5) {
+                    ctx.strokeStyle = S.pen.color; ctx.lineWidth = penWidth();
+                    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+                    const d = DASH[S.pen.style];
+                    ctx.setLineDash(d ? d.map(function(v) { return v * penWidth(); }) : []);
+                    ctx.stroke(); ctx.setLineDash([]);
+                }
+                drawn++;
+            };
+            const begin = function() { if (!inPath) ctx.beginPath(); };
+            const beginTo = function() { if (!inPath) { ctx.beginPath(); ctx.moveTo(S.cur.x, S.cur.y); } };
+            const done = function(fill, stroke) { if (!inPath) paint(fill, stroke); else drawn++; };
+            const rect = function(q) { return { l: i32(q), t: i32(q + 4), r: i32(q + 8), b: i32(q + 12) }; };
+            const readPts = function(o, n, is16) {
+                const pts = [];
+                for (let i = 0; i < n; i++) pts.push(is16 ? { x: i16(o + i * 4), y: i16(o + i * 4 + 2) } : { x: i32(o + i * 8), y: i32(o + i * 8 + 4) });
+                return pts;
+            };
+            const line = function(pts, move) {
+                pts.forEach(function(p, i) { if (i === 0 && move) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+            };
+            const bezier = function(pts, startIdx) {
+                for (let i = startIdx; i + 2 < pts.length; i += 3) ctx.bezierCurveTo(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y, pts[i + 2].x, pts[i + 2].y);
+            };
+            const arcPath = function(q, kind) {
+                const r = rect(q), sx = i32(q + 16), sy = i32(q + 20), ex = i32(q + 24), ey = i32(q + 28);
+                const cx = (r.l + r.r) / 2, cy = (r.t + r.b) / 2, rx = Math.abs(r.r - r.l) / 2, ry = Math.abs(r.b - r.t) / 2;
+                if (!rx || !ry) return;
+                const a1 = Math.atan2((sy - cy) / ry, (sx - cx) / rx), a2 = Math.atan2((ey - cy) / ry, (ex - cx) / rx);
+                if (kind !== 'arcto') begin();
+                if (kind === 'pie') ctx.moveTo(cx, cy);
+                ctx.ellipse(cx, cy, rx, ry, 0, a1, a2, !flip);
+                if (kind === 'pie') ctx.closePath();
+                if (kind === 'chord') ctx.closePath();
+            };
+
+            const decodeText = function(bytes, wide) {
+                if (wide) { try { return new TextDecoder('utf-16le').decode(bytes); } catch (e) { return ''; } }
+                const cs = S.font ? S.font.charset : 0;
+                const enc = { 136: 'big5', 134: 'gbk', 128: 'shift_jis', 129: 'euc-kr', 204: 'windows-1251' }[cs] || 'windows-1252';
+                try { return new TextDecoder(enc).decode(bytes); } catch (e) { return new TextDecoder('windows-1252').decode(bytes); }
+            };
+            const drawText = function(q, wide) {
+                // EMREXTTEXTOUT: ptlReference@q+28.. 實際：EMRTEXT 起點在 q+28
+                const t = q + 28;
+                const rx = i32(t), ry = i32(t + 4), n = u32(t + 8), offStr = u32(t + 12), opts = u32(t + 16), offDx = u32(t + 36);
+                const rc = rect(t + 20);
+                if (opts & 2) { ctx.fillStyle = S.bkColor; ctx.fillRect(rc.l, rc.t, rc.r - rc.l, rc.b - rc.t); }
+                if (!n || n > 4000) return;
+                const base = q - 8; // q 為記錄資料起點（記錄頭之後），offset 是自記錄起點算起
+                const bytes = wide ? u8.subarray(base + offStr, base + offStr + n * 2) : u8.subarray(base + offStr, base + offStr + n);
+                const s = decodeText(bytes, wide);
+                if (!s.trim()) return;
+                const f = S.font;
+                const h = f ? Math.abs(f.height) * (f.height > 0 ? 0.85 : 1) : 12;
+                ctx.save();
+                ctx.font = (f && f.weight >= 600 ? 'bold ' : '') + (f && f.italic ? 'italic ' : '') + (h || 12) + 'px "' + (f ? f.face : 'sans-serif') + '", "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", "Noto Sans CJK TC", sans-serif';
+                ctx.fillStyle = S.textColor;
+                const ta = S.textAlign, hv = ta & 6, vv = ta & 24;
+                ctx.textBaseline = vv === 24 ? 'alphabetic' : (vv === 8 ? 'bottom' : 'top');
+                if (f && f.esc) { ctx.translate(rx, ry); ctx.rotate(-f.esc / 10 * Math.PI / 180); ctx.translate(-rx, -ry); }
+                const chars = Array.from(s);
+                if (offDx && chars.length === n && !(opts & 0x2000)) {
+                    const dxs = [];
+                    for (let i = 0; i < n; i++) dxs.push(i32(base + offDx + i * 4));
+                    const tot = dxs.reduce(function(a, b) { return a + b; }, 0);
+                    let x = rx - (hv === 6 ? tot / 2 : (hv === 2 ? tot : 0));
+                    ctx.textAlign = 'left';
+                    for (let i = 0; i < n; i++) { ctx.fillText(chars[i], x, ry); x += dxs[i]; }
+                } else {
+                    ctx.textAlign = hv === 6 ? 'center' : (hv === 2 ? 'right' : 'left');
+                    ctx.fillText(s, rx, ry);
+                }
+                ctx.restore();
+                drawn++;
+            };
+
+            const loadImg = function(blob) {
+                const url = URL.createObjectURL(blob);
+                return new Promise(function(res) {
+                    const im = new Image();
+                    im.onload = function() { URL.revokeObjectURL(url); res(im); };
+                    im.onerror = function() { URL.revokeObjectURL(url); res(null); };
+                    im.src = url;
+                });
+            };
+            // 繪製 DIB：bmiOff/bmiLen、bitsOff/bitsLen 皆為「自記錄起點」的位移
+            const drawDib = async function(base, bmiOff, bmiLen, bitsOff, bitsLen, sx, sy, sw, sh, dx, dy, dw, dh) {
+                if (!bmiLen || !bitsLen || bmiOff + bmiLen > u8.length || bitsOff + bitsLen > u8.length) return;
+                const bmi = u8.subarray(base + bmiOff, base + bmiOff + bmiLen), bits = u8.subarray(base + bitsOff, base + bitsOff + bitsLen);
+                const dvb = new DataView(bmi.buffer, bmi.byteOffset, bmi.byteLength);
+                const hs = dvb.getUint32(0, true);
+                let comp = 0, bmpH;
+                if (hs === 12) { bmpH = dvb.getInt16(6, true); } else { comp = dvb.getUint32(16, true); bmpH = dvb.getInt32(8, true); }
+                let blob;
+                if (comp === 4) blob = new Blob([bits], { type: 'image/jpeg' });
+                else if (comp === 5) blob = new Blob([bits], { type: 'image/png' });
+                else {
+                    const bmp = new Uint8Array(14 + bmi.length + bits.length);
+                    bmp[0] = 0x42; bmp[1] = 0x4D;
+                    const dvo = new DataView(bmp.buffer);
+                    dvo.setUint32(2, bmp.length, true); dvo.setUint32(10, 14 + bmi.length, true);
+                    bmp.set(bmi, 14); bmp.set(bits, 14 + bmi.length);
+                    blob = new Blob([bmp], { type: 'image/bmp' });
+                }
+                const img = await loadImg(blob);
+                if (!img) return;
+                let sY = sy;
+                if (!sw || !sh) { sx = 0; sY = 0; sw = img.width; sh = img.height; }
+                else if (bmpH > 0) sY = img.height - sy - sh;
+                ctx.save();
+                ctx.translate(dx, dy);
+                ctx.scale(dw < 0 ? -1 : 1, dh < 0 ? -1 : 1);
+                ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, sx, sY, sw, sh, 0, 0, Math.abs(dw), Math.abs(dh));
+                ctx.restore();
+                drawn++;
+            };
+
+            let p = 0, guard = 0;
+            while (p + 8 <= u8.length && guard++ < 200000) {
+                const type = u32(p), size = u32(p + 4);
+                if (size < 8 || p + size > u8.length + 4) break;
+                const q = p + 8, recEnd = Math.min(p + size, u8.length);
+                const next = p + size;
+                try {
+                    switch (type) {
+                        case 14: p = u8.length; continue; // EOF
+                        case 9: S.wExt = { x: i32(q), y: i32(q + 4) }; applyT(); break;
+                        case 10: S.wOrg = { x: i32(q), y: i32(q + 4) }; applyT(); break;
+                        case 11: S.vExt = { x: i32(q), y: i32(q + 4) }; applyT(); break;
+                        case 12: S.vOrg = { x: i32(q), y: i32(q + 4) }; applyT(); break;
+                        case 17: S.mapMode = u32(q); applyT(); break;
+                        case 31: if (i32(q + 4) && i32(q + 12)) { S.vExt = { x: S.vExt.x * i32(q) / i32(q + 4), y: S.vExt.y * i32(q + 8) / i32(q + 12) }; applyT(); } break;
+                        case 32: if (i32(q + 4) && i32(q + 12)) { S.wExt = { x: S.wExt.x * i32(q) / i32(q + 4), y: S.wExt.y * i32(q + 8) / i32(q + 12) }; applyT(); } break;
+                        case 35: S.world = { a: f32(q), b: f32(q + 4), c: f32(q + 8), d: f32(q + 12), e: f32(q + 16), f: f32(q + 20) }; applyT(); break;
+                        case 36: {
+                            const X = { a: f32(q), b: f32(q + 4), c: f32(q + 8), d: f32(q + 12), e: f32(q + 16), f: f32(q + 20) }, mode = u32(q + 24);
+                            if (mode === 1) S.world = IDENT; else if (mode === 2) S.world = mul(X, S.world);
+                            else if (mode === 3) S.world = mul(S.world, X); else if (mode === 4) S.world = X;
+                            applyT(); break;
+                        }
+                        case 18: S.bkMode = u32(q); break;
+                        case 19: S.fillMode = u32(q); break;
+                        case 22: S.textAlign = u32(q); break;
+                        case 24: S.textColor = color(q); break;
+                        case 25: S.bkColor = color(q); break;
+                        case 33: ctx.save(); stack.push(Object.assign({}, S)); break;
+                        case 34: {
+                            let n = i32(q), times = n < 0 ? -n : 1;
+                            while (times-- > 0 && stack.length) { S = stack.pop(); ctx.restore(); }
+                            applyT(); break;
+                        }
+                        case 38: { const st = u32(q + 4) & 0xF; objs[u32(q)] = { kind: 'pen', style: st, w: Math.abs(i32(q + 8)), color: color(q + 16) }; break; }
+                        case 95: { const st = u32(q + 20) & 0xF; objs[u32(q)] = { kind: 'pen', style: st, w: Math.abs(u32(q + 24)), color: color(q + 32) }; break; }
+                        case 39: objs[u32(q)] = { kind: 'brush', style: u32(q + 4), color: color(q + 8) }; break;
+                        case 82: {
+                            let nm = u8.subarray(q + 32, q + 96); const un = new Uint16Array(32);
+                            for (let i = 0; i < 32; i++) un[i] = u16(q + 32 + i * 2);
+                            let face = String.fromCharCode.apply(null, Array.from(un).filter(function(c) { return c; })) || 'sans-serif';
+                            objs[u32(q)] = { kind: 'font', height: i32(q + 4), esc: i32(q + 12), weight: i32(q + 20), italic: u8[q + 24], charset: u8[q + 27], face: face.replace(/"/g, '') };
+                            break;
+                        }
+                        case 37: {
+                            const ih = u32(q);
+                            if (ih & 0x80000000) {
+                                const n = ih & 0x7fffffff;
+                                if (n <= 4) S.brush = { kind: 'brush', style: 0, color: STOCK_BRUSH[n] };
+                                else if (n === 5) S.brush = { kind: 'brush', style: 1, color: '#fff' };
+                                else if (n === 6) S.pen = { kind: 'pen', style: 0, w: 0, color: '#fff' };
+                                else if (n === 7) S.pen = { kind: 'pen', style: 0, w: 0, color: '#000' };
+                                else if (n === 8) S.pen = { kind: 'pen', style: 5, w: 0, color: '#000' };
+                            } else {
+                                const o = objs[ih];
+                                if (o) { if (o.kind === 'pen') S.pen = o; else if (o.kind === 'brush') S.brush = o; else if (o.kind === 'font') S.font = o; }
+                            }
+                            break;
+                        }
+                        case 40: delete objs[u32(q)]; break;
+                        case 27: S.cur = { x: i32(q), y: i32(q + 4) }; if (inPath) ctx.moveTo(S.cur.x, S.cur.y); break;
+                        case 54: beginTo(); S.cur = { x: i32(q), y: i32(q + 4) }; ctx.lineTo(S.cur.x, S.cur.y); done(false, true); break;
+                        case 2: case 85: { const is16 = type === 85, pts = readPts(q + 20, u32(q + 16), is16); begin(); if (pts.length) { ctx.moveTo(pts[0].x, pts[0].y); bezier(pts, 1); } done(false, true); break; }
+                        case 5: case 88: { const is16 = type === 88, pts = readPts(q + 20, u32(q + 16), is16); beginTo(); bezier(pts, 0); done(false, true); S.cur = pts[pts.length - 1]; break; }
+                        case 3: case 86: { const pts = readPts(q + 20, u32(q + 16), type === 86); begin(); line(pts, true); ctx.closePath(); done(true, true); break; }
+                        case 4: case 87: { const pts = readPts(q + 20, u32(q + 16), type === 87); begin(); line(pts, true); done(false, true); break; }
+                        case 6: case 89: { const pts = readPts(q + 20, u32(q + 16), type === 89); beginTo(); line(pts, false); done(false, true); if (pts.length) S.cur = pts[pts.length - 1]; break; }
+                        case 7: case 8: case 90: case 91: {
+                            const is16 = type >= 90, poly = type === 8 || type === 91;
+                            const np = u32(q + 16), tot = u32(q + 20); let cnt = q + 24, pts = cnt + np * 4;
+                            begin();
+                            for (let k = 0; k < np; k++) {
+                                const n = u32(cnt + k * 4), arr = readPts(pts, n, is16); pts += n * (is16 ? 4 : 8);
+                                line(arr, true); if (poly) ctx.closePath();
+                            }
+                            done(poly, true); break;
+                        }
+                        case 42: { const r = rect(q); begin(); ctx.ellipse((r.l + r.r) / 2, (r.t + r.b) / 2, Math.abs(r.r - r.l) / 2, Math.abs(r.b - r.t) / 2, 0, 0, Math.PI * 2); done(true, true); break; }
+                        case 43: { const r = rect(q); begin(); ctx.rect(r.l, r.t, r.r - r.l, r.b - r.t); done(true, true); break; }
+                        case 44: {
+                            const r = rect(q), cx = Math.abs(i32(q + 16)) / 2, cy = Math.abs(i32(q + 20)) / 2;
+                            const l = Math.min(r.l, r.r), t = Math.min(r.t, r.b), w = Math.abs(r.r - r.l), h = Math.abs(r.b - r.t);
+                            const rx = Math.min(cx, w / 2), ry = Math.min(cy, h / 2);
+                            begin();
+                            ctx.moveTo(l + rx, t); ctx.lineTo(l + w - rx, t); ctx.ellipse(l + w - rx, t + ry, rx, ry, 0, -Math.PI / 2, 0);
+                            ctx.lineTo(l + w, t + h - ry); ctx.ellipse(l + w - rx, t + h - ry, rx, ry, 0, 0, Math.PI / 2);
+                            ctx.lineTo(l + rx, t + h); ctx.ellipse(l + rx, t + h - ry, rx, ry, 0, Math.PI / 2, Math.PI);
+                            ctx.lineTo(l, t + ry); ctx.ellipse(l + rx, t + ry, rx, ry, 0, Math.PI, Math.PI * 1.5); ctx.closePath();
+                            done(true, true); break;
+                        }
+                        case 45: arcPath(q, 'arc'); done(false, true); break;
+                        case 46: arcPath(q, 'chord'); done(true, true); break;
+                        case 47: arcPath(q, 'pie'); done(true, true); break;
+                        case 55: arcPath(q, 'arcto'); done(false, true); break;
+                        case 59: ctx.beginPath(); inPath = true; break;
+                        case 60: inPath = false; break;
+                        case 61: if (inPath) ctx.closePath(); break;
+                        case 62: paint(true, false); break;
+                        case 63: paint(true, true); break;
+                        case 64: paint(false, true); break;
+                        case 67: ctx.clip(S.fillMode === 2 ? 'nonzero' : 'evenodd'); break;
+                        case 30: { const r = rect(q); ctx.beginPath(); ctx.rect(r.l, r.t, r.r - r.l, r.b - r.t); ctx.clip(); break; }
+                        case 83: case 84: drawText(q, type === 84); break;
+                        case 81: // StretchDIBits
+                            await drawDib(p, u32(q + 40), u32(q + 44), u32(q + 48), u32(q + 52), i32(q + 24), i32(q + 28), i32(q + 32), i32(q + 36), i32(q + 16), i32(q + 20), i32(q + 64), i32(q + 68)); break;
+                        case 80: // SetDIBitsToDevice
+                            await drawDib(p, u32(q + 40), u32(q + 44), u32(q + 48), u32(q + 52), i32(q + 24), i32(q + 28), i32(q + 32), i32(q + 36), i32(q + 16), i32(q + 20), i32(q + 32), i32(q + 36)); break;
+                        case 76: case 77: { // BitBlt / StretchBlt
+                            const dx = i32(q + 16), dy = i32(q + 20), dw = i32(q + 24), dh = i32(q + 28), rop = u32(q + 32);
+                            const bmiLen = u32(q + 80);
+                            if (bmiLen) {
+                                const sw = type === 77 ? i32(q + 92) : dw, sh = type === 77 ? i32(q + 96) : dh;
+                                await drawDib(p, u32(q + 76), bmiLen, u32(q + 84), u32(q + 88), i32(q + 36), i32(q + 40), sw, sh, dx, dy, dw, dh);
+                            } else if (rop === 0x42 || rop === 0xFF0062 || rop === 0xF00021) {
+                                ctx.fillStyle = rop === 0x42 ? '#000' : (rop === 0xFF0062 ? '#fff' : (S.brush.style === 0 ? S.brush.color : '#fff'));
+                                ctx.fillRect(dx, dy, dw, dh); drawn++;
+                            }
+                            break;
+                        }
+                    }
+                } catch (err) { console.warn('EMF record', type, err); }
+                p = next;
+            }
+            if (!drawn) return null;
+            return { src: canvas.toDataURL('image/png'), w: shownW, h: shownW / aspect };
+        }
+
+
         // ================= 解析核心 =================
         // ================= 解析核心（純文字邏輯，不依賴 DOM） =================
         // 輸入：段落陣列 [{text, html, imgCount, imgFail}]
@@ -569,7 +922,7 @@
         }
 
         // ---------- 答案行辨識 ----------
-        var LABEL_RE = /^[【\[(]?\s*(?:正確答案|參考答案|標準答案|答案|解答|Ans(?:wer)?|答(?=\s*:))\s*[】\])]?\s*:?\s*/i;
+        var LABEL_RE = /^[【\[(《〈]?\s*(?:正確答案|參考答案|標準答案|答案|解答|Ans(?:wer)?|答(?=\s*:))\s*[】\])》〉]?\s*:?\s*/i;
         var SCORE_PAREN_RE = /^[(\[]\s*[^)\]]{0,14}分[^)\]]{0,10}[)\]]\s*/;
         var PAIR_G = new RegExp('(\\d{1,3})(?:\\s*[.:\\-、)]\\s*\\(?\\s*(' + TOK_SRC + '|[1-5](?!\\d))|\\s+\\(?\\s*(' + TOK_SRC + '))\\s*\\)?', 'g');
         var SUB_G = new RegExp('\\(\\s*(\\d{1,2})\\s*\\)\\s*(' + TOK_SRC + ')', 'g');
@@ -755,6 +1108,7 @@
         }
 
         // ---------- 解析一份文件 ----------
+        var LEAD_RE = /^\s*(?:第\s*\d{1,3}\s*題|\d{1,3}\s*[.、:)]|\(\s*\))/;
         function parseDoc(paras) {
             var n = paras.length, i, p;
             var cls = new Array(n), nb = 0, na = 0;
@@ -822,6 +1176,16 @@
                         if (ex.val && !cur.inline) cur.inline = ex.val;
                         cur.parts.push({ text: ex.text, html: p.html, imgCount: p.imgCount, imgFail: p.imgFail });
                         cur.fullText += '\n' + ex.text;
+                        continue;
+                    }
+                }
+                // 題幹跨多段：本段沒有題號／（　）開頭，而上一題有、且還沒出現選項 → 視為上一題題幹的延伸
+                // （例：「三個小朋友討論…」後面接「妮妮：…」「風見：…」「小新：…」再接選項）
+                if (cur && !lm && !LEAD_RE.test(nt) && LEAD_RE.test(norm(cur.rawText))) {
+                    var ci3 = findOptions(norm(cur.fullText), { min: 1, any: false });
+                    if (!ci3) {
+                        cur.parts.push({ text: t, html: p.html, imgCount: p.imgCount, imgFail: p.imgFail });
+                        cur.fullText += '\n' + t;
                         continue;
                     }
                 }
@@ -1230,7 +1594,7 @@
             if (imgFailQ.length) {
                 const d = document.createElement('div');
                 d.className = 'text-orange-600';
-                d.textContent = '⚠️ ' + imgFailQ.join('、') + ' 的圖片格式無法轉換（例如 .emf），學生端會標註「請對照紙本」。建議在 Word 內將該圖另存成 PNG 後重新插入。';
+                d.textContent = '⚠️ ' + imgFailQ.join('、') + ' 的圖片轉換失敗（可能是特殊格式或檔案損毀），學生端會標註「請對照紙本」。可在 Word 內將該圖另存成 PNG 後重新插入。';
                 notes.appendChild(d);
             }
             const noAns = PV.bank.filter(function(b) { return !b.answer; }).length;
